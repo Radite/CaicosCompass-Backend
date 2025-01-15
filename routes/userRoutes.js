@@ -1,0 +1,107 @@
+const express = require('express');
+const router = express.Router();
+const userController = require('../controllers/userController');
+const authMiddleware = require('../middleware/authMiddleware');
+
+// Authentication
+router.post('/register', userController.registerUser); // Register a new user
+router.post('/login', userController.loginUser); // Login with email and password
+router.post('/logout', authMiddleware.protect, userController.logoutUser); // Logout the user
+router.post('/google', userController.googleLogin); // Google OAuth login
+router.post('/reset-password', userController.resetPassword); // Request a password reset
+
+// User Profile
+router.get('/me', authMiddleware.protect, userController.getProfile); // Get the logged-in user's profile
+router.put('/me', authMiddleware.protect, userController.updateProfile); // Update the logged-in user's profile
+router.delete('/me', authMiddleware.protect, userController.deleteAccount); // Delete the user's account
+
+// Favorites and Wishlist
+router.get('/favorites', authMiddleware.protect, userController.getFavorites); // Get the user's favorite activities
+router.post('/favorites', authMiddleware.protect, userController.toggleFavorite); // Add or remove a favorite activity
+router.get('/wishlist', authMiddleware.protect, userController.getWishlist); // Get the user's wishlist
+router.post('/wishlist', authMiddleware.protect, userController.toggleWishlist); // Add or remove an activity from the wishlist
+
+// Notifications
+router.get('/notifications', authMiddleware.protect, userController.getNotifications); // Get all notifications
+router.put('/notifications/:id', authMiddleware.protect, userController.markNotificationRead); // Mark a notification as read
+
+// Host Management
+router.put(
+  '/host/:id',
+  authMiddleware.protect,
+  authMiddleware.adminProtect, // Only admins can update host details
+  userController.updateHostDetails
+);
+
+// Reviews
+router.get('/reviews/:userId', userController.getUserReviews); // Get reviews for a specific user (host)
+router.post(
+  '/reviews/:hostId',
+  authMiddleware.protect, // Logged-in users can add reviews
+  userController.addReview
+);
+router.delete(
+  '/reviews/:reviewId',
+  authMiddleware.protect, // Logged-in users can delete their own reviews
+  userController.deleteReview
+);
+
+// Referral Program
+router.get(
+  '/referrals',
+  authMiddleware.protect, // Only logged-in users can access referral details
+  userController.getReferrals
+);
+router.post(
+  '/referrals',
+  authMiddleware.protect, // Only logged-in users can add referrals
+  userController.addReferral
+);
+
+// Privacy Settings
+router.get(
+  '/privacy',
+  authMiddleware.protect, // Only logged-in users can access privacy settings
+  userController.getPrivacySettings
+);
+router.put(
+  '/privacy',
+  authMiddleware.protect, // Only logged-in users can update privacy settings
+  userController.updatePrivacySettings
+);
+
+// Admin Only Routes
+router.get(
+  '/all-users',
+  authMiddleware.protect,
+  authMiddleware.adminProtect, // Only admins can get all users
+  userController.getAllUsers
+);
+router.delete(
+  '/user/:id',
+  authMiddleware.protect,
+  authMiddleware.adminProtect, // Only admins can delete a user
+  userController.deleteUser
+);
+router.put(
+  '/user/:id',
+  authMiddleware.protect,
+  authMiddleware.adminProtect, // Only admins can update a user's role
+  userController.updateUserRole
+);
+
+// Business Manager Routes
+router.get(
+  '/business-dashboard',
+  authMiddleware.protect,
+  authMiddleware.businessManagerProtect, // Only business managers can access the business dashboard
+  userController.getBusinessDashboard
+);
+router.post(
+  '/manage-listings',
+  authMiddleware.protect,
+  authMiddleware.businessManagerProtect, // Only business managers can manage listings
+  userController.manageListings
+);
+
+module.exports = router;
