@@ -3,11 +3,124 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const { generateToken } = require('../utils/jwtUtils');
+const Activity = require('../models/Activity');
+const Stay = require('../models/Stay');
+const Dining = require('../models/Dining');
+const Transportation = require('../models/Transportation');
+const { check, validationResult } = require('express-validator');
+const nodemailer = require('nodemailer');
+const { sendVerificationEmail } = require('./emailService');  // Ensure correct path
+const crypto = require('crypto');
+const { sendPasswordResetEmail } = require('./emailService');
+
+
+exports.getUserEmail = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    
+    // Find the user by id and select only the email field
+    const user = await User.findById(userId).select('email');
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    res.status(200).json({ email: user.email });
+  } catch (err) {
+    console.error('Error fetching user email:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Forgot Password Handler
+// Forgot Password Handler
+// Backend: Generate reset token and send email
+exports.forgotPassword = async (req, res) => {
+  const { email } = req.body;
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+
+    const resetToken = crypto.randomBytes(20).toString('hex');
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour expiration time
+
+    await user.save();
+
+    // Send the reset password email (ensure you send the correct reset link)
+    const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    await sendPasswordResetEmail(email, resetLink);
+
+    res.status(200).json({ message: 'Password reset email sent.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error during password reset request.' });
+  }
+};
+
+
+// Reset Password Handler
+exports.resetPassword = async (req, res) => {
+  const { token } = req.params; // The reset token from the URL
+
+  try {
+    // Find the user by reset token and ensure it hasn't expired
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() }, // Token has not expired
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid or expired reset token.' });
+    }
+
+    res.status(200).json({ message: 'Token is valid, allow password reset.' });
+
+  } catch (error) {
+    console.error('Error during password reset verification:', error);
+    res.status(500).json({ message: 'Internal server error. Please try again later.' });
+  }
+};
+
+exports.postResetPassword = async (req, res) => {
+  const { token } = req.params;
+  const { newPassword } = req.body;
+
+  try {
+    // Find the user by reset token and ensure it hasn't expired
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid or expired reset token.' });
+    }
+
+    // Hash the new password before saving
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // Update the user's password
+    user.password = hashedPassword;
+    user.resetPasswordToken = undefined; // Clear the reset token
+    user.resetPasswordExpires = undefined; // Clear the expiration time
+
+    await user.save();
+
+    res.status(200).json({ message: 'Password successfully reset.' });
+
+  } catch (error) {
+    console.error('Error during password reset:', error);
+    res.status(500).json({ message: 'Internal server error. Please try again later.' });
+  }
+};
 
 // Google OAuth Client
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-// Authentication
+// User Registration
+// User Registration Function
 exports.registerUser = async (req, res) => {
   try {
     const { name, username, email, password } = req.body;
@@ -21,116 +134,179 @@ exports.registerUser = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    const user = await User.create({ name, username, email, password });
+    // Generate email verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    console.log('Generated Verification Token:', verificationToken);
+
+    const verificationTokenExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours expiration
+
+    const user = await User.create({
+      name,
+      username,
+      email,
+      password,
+      verificationToken,
+      verificationTokenExpires,
+    });
+
+    // Generate verification link
+    const verificationLink = `${process.env.FRONTEND_URL}/--/verify-email?token=${verificationToken}`;
+    console.log('Generated Verification Link:', verificationLink);
+    await sendVerificationEmail(user.email, verificationLink);
 
     res.status(201).json({
-      _id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
+      message: 'User registered successfully. Please check your email for verification link.',
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
+
+exports.resendVerificationEmail = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required.' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: 'User not found.' });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ message: 'User is already verified.' });
+    }
+
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    user.verificationToken = verificationToken;
+    user.verificationTokenExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours expiration
+    await user.save();
+
+    const verificationLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
+    await sendVerificationEmail(user.email, verificationLink);
+
+    res.status(200).json({ message: 'Verification email has been resent. Please check your inbox.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error resending verification email.' });
+  }
+};
+
+
+
 exports.loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Log the email and password for debugging (only in a secure dev/test environment)
-    console.log('Login Attempt:', { email, password });
-
     if (!email || !password) {
-      console.log('Missing email or password');
-      return res.status(400).json({ message: 'Email and password are required' });
+      return res.status(400).json({ message: 'All fields are required' });
     }
 
     const user = await User.findOne({ email });
-    if (user && (await bcrypt.compare(password, user.password))) {
-      console.log('Login Successful:', { email });
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid email or password' });
+    }
+
+    if (!user.isVerified) {
+      return res.status(403).json({ message: 'Please verify your email before logging in.' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    console.log("User found:", user.email); // Debugging
+
+    // Generate JWT Access Token
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+    console.log("Generated Token:", token); // 🔥 Check if token is generated
+
+    res.status(200).json({
+      success: true,
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
+
+exports.logoutUser = async (req, res) => {
+  res.clearCookie('refreshToken', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'Strict' });
+  res.status(200).json({ message: 'Logged out successfully' });
+};
+
+exports.refreshToken = async (req, res) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+    if (!refreshToken) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    jwt.verify(refreshToken, process.env.REFRESH_SECRET, (err, decoded) => {
+      if (err) return res.status(403).json({ message: 'Invalid refresh token' });
+
+      // Generate a new Access Token
+      const newAccessToken = jwt.sign({ id: decoded.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+      res.status(200).json({ accessToken: newAccessToken });
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.googleLogin = [
+  check('token', 'Google token is required').notEmpty(),
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+      const { token } = req.body;
+
+      const ticket = await googleClient.verifyIdToken({
+        idToken: token,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+
+      const payload = ticket.getPayload();
+      let user = await User.findOne({ email: payload.email });
+
+      if (!user) {
+        user = await User.create({
+          name: payload.name,
+          email: payload.email,
+          authProvider: 'google',
+          providerId: payload.sub,
+        });
+      }
+
       res.json({
-        success: true, // Add this key
         _id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
         token: generateToken(user.id),
       });
-    } else {
-      console.log('Invalid email or password:', { email });
-      res.status(401).json({ success: false, message: 'Invalid email or password' });
+    } catch (error) {
+      res.status(500).json({ message: 'Error processing request' });
     }
-    
-  } catch (error) {
-    console.error('Error during login:', error.message);
-    res.status(500).json({ message: error.message });
-  }
-};
-
-exports.logoutUser = (req, res) => {
-  res.status(200).json({ message: 'User logged out successfully' });
-};
-
-exports.googleLogin = async (req, res) => {
-  try {
-    const { token } = req.body;
-
-    if (!token) {
-      return res.status(400).json({ message: 'Token is required' });
-    }
-
-    const ticket = await googleClient.verifyIdToken({
-      idToken: token,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
-
-    const payload = ticket.getPayload();
-    let user = await User.findOne({ email: payload.email });
-
-    if (!user) {
-      user = await User.create({
-        name: payload.name,
-        email: payload.email,
-        authProvider: 'google',
-        providerId: payload.sub,
-      });
-    }
-
-    res.json({
-      _id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      token: generateToken(user.id),
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-exports.resetPassword = async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ message: 'Email is required' });
-    }
-
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    const resetToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
-      expiresIn: '1h',
-    });
-
-    // TODO: Send resetToken via email (integrate email service)
-    res.status(200).json({ message: 'Reset token generated', resetToken });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+  },
+];
 
 // User Profile
 exports.getProfile = async (req, res) => {
@@ -217,33 +393,72 @@ exports.getFavorites = async (req, res) => {
 
 
 exports.toggleFavorite = async (req, res) => {
-  const { category, itemId, optionId } = req.body; // Accept category, itemId (standalone), and optionId (optional)
-  const user = await User.findById(req.user.id);
+  try {
+    const { category, itemId, optionId } = req.body; // Accept category, itemId (standalone), and optionId (optional)
+    const user = await User.findById(req.user.id);
 
-  // Check if the favorite already exists
-  const exists = user.favorites.some(
-    (fav) =>
-      fav.category === category &&
-      fav.itemId.equals(itemId) &&
-      (!optionId || fav.optionId?.equals(optionId))
-  );
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
 
-  if (exists) {
-    // Remove the favorite if it exists
-    user.favorites = user.favorites.filter(
+    // Ensure valid category
+    const validCategories = ['activities', 'stays', 'dining', 'transportation'];
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({ error: 'Invalid category' });
+    }
+
+    // Check if the favorite already exists
+    const exists = user.favorites.some(
       (fav) =>
-        !(fav.category === category &&
-          fav.itemId.equals(itemId) &&
-          (!optionId || fav.optionId?.equals(optionId)))
+        fav.category === category &&
+        fav.itemId.equals(itemId) &&
+        (!optionId || fav.optionId?.equals(optionId))
     );
-  } else {
-    // Add the favorite
-    user.favorites.push({ category, itemId, optionId });
-  }
 
-  await user.save();
-  res.json(user.favorites);
+    if (exists) {
+      // Remove the favorite if it exists
+      user.favorites = user.favorites.filter(
+        (fav) =>
+          !(fav.category === category &&
+            fav.itemId.equals(itemId) &&
+            (!optionId || fav.optionId?.equals(optionId)))
+      );
+    } else {
+      // Validate item existence (optional but recommended)
+      const modelMap = {
+        activities: Activity,
+        stays: Stay,
+        dining: Dining,
+        transportation: Transportation,
+      };
+      const Model = modelMap[category];
+      const item = await Model.findById(itemId);
+      if (!item) {
+        return res.status(400).json({ error: 'Invalid itemId' });
+      }
+
+      // Validate optionId if provided
+      if (optionId) {
+        const optionExists = item.options?.some((option) =>
+          option._id.equals(optionId)
+        );
+        if (!optionExists) {
+          return res.status(400).json({ error: 'Invalid optionId' });
+        }
+      }
+
+      // Add the favorite
+      user.favorites.push({ category, itemId, optionId });
+    }
+
+    await user.save();
+    res.json(user.favorites);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Server error' });
+  }
 };
+
 
 exports.getWishlist = async (req, res) => {
   const user = await User.findById(req.user.id)
@@ -541,3 +756,115 @@ exports.updateUserRole = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+exports.verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.query;
+    console.log('Received verification request with token:', token);
+
+    if (!token) {
+      console.log('Verification failed: No token provided');
+      return res.status(400).json({ message: 'Token is required' });
+    }
+
+    const user = await User.findOne({ verificationToken: token });
+
+    if (!user) {
+      console.log('Verification failed: Invalid or expired token:', token);
+      return res.status(400).json({ message: 'Invalid or expired token' });
+    }
+
+    console.log('User found with token:', user.email);
+
+    if (user.isVerified) {
+      console.log('Verification failed: User already verified:', user.email);
+      return res.status(400).json({ message: 'User already verified' });
+    }
+
+    // Check if token is expired
+    const currentTime = Date.now();
+    console.log('Token expiration time:', user.verificationTokenExpires);
+    console.log('Current time:', currentTime);
+
+    if (user.verificationTokenExpires < currentTime) {
+      console.log('Verification failed: Token has expired');
+      return res.status(400).json({ message: 'Verification link has expired' });
+    }
+
+    // Mark user as verified
+    user.isVerified = true;
+    user.verificationToken = null;
+    user.verificationTokenExpires = null;
+    await user.save();
+
+    console.log('User verified successfully:', user.email);
+    res.status(200).json({ message: 'Email verified successfully!' });
+
+  } catch (error) {
+    console.error('Verification error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.deactivateAccount = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Update account status to "deactivated"
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { accountStatus: 'deactivated', deactivatedAt: new Date() },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    res.status(200).json({ message: 'Account successfully deactivated.', user });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Something went wrong. Please try again later.' });
+  }
+};
+
+
+exports.deleteAccount = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Delete the user account
+    const user = await User.findByIdAndDelete(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    res.status(200).json({ message: 'Account successfully deleted.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Something went wrong. Please try again later.' });
+  }
+};
+
+exports.reactivateAccount = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Update the user's account status to 'active'
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { accountStatus: 'active', deactivatedAt: null },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    res.status(200).json({ message: 'Your account has been successfully reactivated.' });
+  } catch (error) {
+    console.error('Error reactivating account:', error);
+    res.status(500).json({ message: 'Failed to reactivate account.' });
+  }
+};
+

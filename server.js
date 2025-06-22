@@ -16,18 +16,25 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(express.json()); // Parse JSON
-app.use(cors());
+app.use(cors({
+  origin: "http://localhost:3000", // your Next.js frontend URL
+  credentials: true,               // allow cookies and credentials to be sent
+}));
+
 app.use(helmet());
 
 // Routes
 app.use('/api/users', require('./routes/userRoutes'));
-
+app.use('/api/favorites-wishlist', require('./routes/favoriteWishlistRoutes'));
 app.use('/api/activities', require('./routes/activityRoutes'));
 app.use('/api/bookings', require('./routes/bookingRoutes'));
 app.use('/api/cart', require('./routes/cartRoutes'));
 app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/stays', require('./routes/stayRoutes'));
 app.use('/api/transportations', require('./routes/transportationRoutes'));
+app.use('/api/dinings', require('./routes/diningRoutes'));
+app.use('/api/services', require('./routes/serviceRoutes'));
+app.use('/api/reviews', require('./routes/reviewRoutes'));
 
 // Home Route
 app.get('/', (req, res) => {

@@ -1,112 +1,90 @@
 const mongoose = require('mongoose');
+const Service = require('./Service');
 
-const ActivitySchema = new mongoose.Schema(
-  {
-    title: { type: String, required: true },
-    description: { type: String, required: true },
-    price: { type: Number }, // Base price for standalone activities
-    discountedPrice: { type: Number },
-    pricingType: { 
-      type: String, 
-      enum: ['per hour', 'per person', 'per trip', 'per day', 'varies'], 
-      default: 'per person' 
-    },
-
-    // Suboptions for the activity
-    options: [
-      {
-        title: { type: String, required: true }, // Title of the suboption
-        cost: { type: Number, required: true }, // Price for the suboption
-        description: { type: String }, // Description of the suboption
-        location: { type: String }, // Location specific to the suboption
-        availability: [
-          {
-            date: { type: Date, required: true }, // Specific date
-            times: [{ type: String, required: true }], // E.g., '8:00 AM', '2:00 PM'
-            isAvailable: { type: Boolean, default: true }, // Availability for that date
-          },
-        ],
-        images: [
-          {
-            url: { type: String, required: true },
-            isMain: { type: Boolean, default: false },
-          },
-        ],
-      },
-    ],
-
-    // Availability for standalone activities
-    availability: [
-      {
-        date: { type: Date },
-        times: [{ type: String }], // E.g., '8:00 AM', '10:00 AM'
-        isAvailable: { type: Boolean, default: true },
-      },
-    ],
-
-    // Location information
-    location: { type: String, required: true },
-    coordinates: {
-      latitude: { type: Number },
-      longitude: { type: Number },
-    },
-
-    // Images for the activity
-    images: [
-      {
-        url: { type: String, required: true },
-        isMain: { type: Boolean, default: false },
-      },
-    ],
-
-    // Tags and categories
-    category: { type: String, enum: ['Excursion', 'Nature Trails', 'Museums', 'Water Sports', 'Shopping', 'Cultural Site'], required: true },
-    tags: [{ type: String }], // E.g., ["family-friendly", "adventurous"]
-
-    // Additional features
-    island: { type: String, required: true },
-    fees: { type: Object }, // Additional fees
-    deals: [
-      {
-        title: { type: String },
-        price: { type: Number },
-        expiryDate: { type: Date },
-      },
-    ],
-
-    // Hosting information
-    host: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User', // Reference to the User model
-      required: true,
-    },
-
-    // Reviews for the activity
-    reviews: [
-      {
-        user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Reviewer
-        rating: { type: Number, min: 1, max: 5, required: true },
-        comment: { type: String },
-        createdAt: { type: Date, default: Date.now },
-      },
-    ],
+const ActivitySchema = new mongoose.Schema({
+  price: { type: Number, required: true },
+  discountedPrice: { type: Number },
+  pricingType: { 
+    type: String, 
+    enum: ['per hour', 'per person', 'per trip', 'per day', 'varies'], 
+    default: 'per person' 
   },
-  { timestamps: true }
-);
-
-// Middleware to ensure only one image is marked as main
-ActivitySchema.pre('save', function (next) {
-  const mainImages = this.images.filter((img) => img.isMain);
-  if (mainImages.length > 1) {
-    return next(new Error('Only one image can be set as the main image.'));
-  }
-  next();
+  options: [
+    {
+      title: { type: String, required: true },
+      cost: { type: Number, required: true },
+      pricingType: { 
+        type: String, 
+        enum: ['per hour', 'per person', 'per trip', 'per day', 'varies'], 
+        default: 'per person' 
+      },
+      description: { type: String },
+      location: { type: String },
+      maxPeople: { type: Number, required: true }, // Max people per option
+      duration: { type: Number, required: true }, // Custom duration per option (in minutes/hours)
+      availability: [
+        {
+          day: { 
+            type: String, 
+            enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'], 
+            required: true 
+          },
+          timeSlots: [
+            {
+              startTime: { type: String, required: true },  // Example: '09:00 AM'
+              endTime: { type: String, required: true },    // Example: '10:00 AM'
+              maxPeople: { type: Number, required: true }   // Max people per slot
+            }
+          ]
+        }
+      ],
+      unavailableTimeSlots: [
+        {
+          date: { type: Date, required: true }, 
+          startTime: { type: String, required: true }, 
+          endTime: { type: String, required: true }
+        }
+      ],
+      customUnavailableDates: [
+        {
+          date: { type: Date, required: true },
+          reason: { type: String }
+        }
+      ],
+      equipmentRequirements: [
+        {
+          equipmentName: { type: String, required: true },
+          provided: { type: Boolean, default: false }
+        }
+      ],
+      images: [
+        {
+          url: { type: String, required: true },
+          isMain: { type: Boolean, default: false }
+        }
+      ]
+    },
+  ],
+  category: { 
+    type: String, 
+    enum: ['Excursion', 'Nature Trails', 'Museums', 'Water Sports', 'Shopping', 'Cultural Site'], 
+    required: true 
+  },
+  ageRestrictions: {
+    minAge: { type: Number, default: 0 }, 
+    maxAge: { type: Number }
+  },
+  waivers: [
+    {
+      title: { type: String, required: true },
+      description: { type: String },
+      url: { type: String } // Link to waiver document
+    }
+  ],
+  cancellationPolicy: { type: String },
+  host: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // Reference to the user model
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 
-// Virtual field for the main image
-ActivitySchema.virtual('mainImage').get(function () {
-  const mainImage = this.images.find((img) => img.isMain);
-  return mainImage ? mainImage.url : null;
-});
-
-module.exports = mongoose.model('Activity', ActivitySchema);
+module.exports = Service.discriminator('Activity', ActivitySchema);

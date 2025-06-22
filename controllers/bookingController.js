@@ -3,7 +3,66 @@ const Booking = require('../models/Booking');
 // Create a new booking
 exports.createBooking = async (req, res) => {
   try {
-    const newBooking = await Booking.create({ ...req.body, user: req.user.id });
+    // Destructure common and service-specific fields from the request body.
+    const {
+      category,
+      itemId,          // The service's ObjectId (Activity, Stay, or Transportation)
+      optionId,        // (Optional) specific option's ObjectId (for Activity/Transportation)
+      date,            // For Activity and Transportation: booking date; for Stay: could be startDate.
+      time,            // For Activity: time slot; For Transportation: pickup time.
+      startDate,       // For Stay bookings.
+      endDate,         // For Stay bookings.
+      numOfPeople,
+      multiUser,
+      participants,    // Array of user IDs if multiUser is true.
+      paymentDetails,  // Payment breakdown, if needed.
+      // You can include additional fields as required (e.g., pickupLocation, dropoffLocation for transportation).
+      pickupLocation,
+      dropoffLocation,
+    } = req.body;
+
+    // Start with common booking fields.
+    let bookingData = {
+      user: req.user.id,
+      category,
+      numOfPeople,
+      multiUser,
+      paymentDetails, // This can include totalAmount, etc.
+    };
+
+    // Set participants if multi-user booking.
+    if (multiUser && participants && Array.isArray(participants)) {
+      bookingData.participants = participants;
+    }
+
+    // Set fields based on the category.
+    if (category === 'activity') {
+      bookingData.activity = itemId;
+      if (optionId) {
+        bookingData.option = optionId;
+      }
+      bookingData.date = date; // The booking date.
+      bookingData.time = time; // The selected time slot (e.g., "10:00 AM - 10:30 AM").
+    } else if (category === 'stay') {
+      bookingData.stay = itemId;
+      bookingData.startDate = startDate;
+      bookingData.endDate = endDate;
+      // You might also want to include number of nights or similar calculations on the frontend.
+    } else if (category === 'transportation') {
+      bookingData.transportation = itemId;
+      if (optionId) {
+        bookingData.option = optionId;
+      }
+      bookingData.date = date; // The booking date.
+      bookingData.time = time; // For transportation, this is the pickup time.
+      bookingData.pickupLocation = pickupLocation;
+      bookingData.dropoffLocation = dropoffLocation;
+    } else {
+      return res.status(400).json({ success: false, message: 'Invalid booking category.' });
+    }
+
+    // Create the booking using the booking schema.
+    const newBooking = await Booking.create(bookingData);
     res.status(201).json({ success: true, data: newBooking });
   } catch (error) {
     console.error('Error creating booking:', error.message);
@@ -291,5 +350,57 @@ exports.markNotificationRead = async (req, res) => {
   } catch (error) {
     console.error('Error marking notification as read:', error.message);
     res.status(500).json({ success: false, message: 'Error marking notification as read.', error: error.message });
+  }
+};
+
+// Checkout multiple items from the cart
+exports.checkoutMultipleBookings = async (req, res) => {
+  try {
+    // Fetch user's cart
+    const userCart = await Cart.findOne({ user: req.user.id });
+
+    if (!userCart || userCart.items.length === 0) {
+      return res.status(400).json({ success: false, message: 'Your cart is empty.' });
+    }
+
+    // Process each cart item to create bookings
+    const bookings = await Promise.all(
+      userCart.items.map(async (cartItem) => {
+        return Booking.create({
+          user: req.user.id,
+          activity: cartItem.item,
+          option: cartItem.option || null,
+          quantity: cartItem.quantity,
+          selectedDate: cartItem.selectedDate,
+          selectedTime: cartItem.selectedTime,
+          numPeople: cartItem.numPeople,
+          totalPrice: cartItem.totalPrice,
+          notes: cartItem.notes || '',
+          status: 'confirmed',
+          paymentDetails: {
+            amountPaid: cartItem.totalPrice,
+            remainingBalance: 0,
+            payees: [{ user: req.user.id, amount: cartItem.totalPrice, status: 'paid', paymentMethod: 'card' }],
+          },
+        });
+      })
+    );
+
+    // Clear the cart after checkout
+    userCart.items = [];
+    await userCart.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'All items successfully booked.',
+      data: bookings,
+    });
+  } catch (error) {
+    console.error('Error processing checkout:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Error processing checkout.',
+      error: error.message,
+    });
   }
 };

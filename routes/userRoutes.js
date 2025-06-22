@@ -8,12 +8,28 @@ router.post('/register', userController.registerUser); // Register a new user
 router.post('/login', userController.loginUser); // Login with email and password
 router.post('/logout', authMiddleware.protect, userController.logoutUser); // Logout the user
 router.post('/google', userController.googleLogin); // Google OAuth login
-router.post('/reset-password', userController.resetPassword); // Request a password reset
+// Forgot password route
+router.post('/forgot-password', userController.forgotPassword);
+router.post('/refresh', userController.refreshToken);
+// Reset password verification route (GET)
+router.get('/reset-password/:token', userController.resetPassword);
+
+// Post reset password route (POST)
+router.post('/reset-password/:token', userController.postResetPassword);
+router.post('/resend-verification', userController.resendVerificationEmail);
+router.get('/verify-email', userController.verifyEmail);
 
 // User Profile
 router.get('/me', authMiddleware.protect, userController.getProfile); // Get the logged-in user's profile
 router.put('/me', authMiddleware.protect, userController.updateProfile); // Update the logged-in user's profile
-router.delete('/me', authMiddleware.protect, userController.deleteAccount); // Delete the user's account
+router.get('/:id/email', userController.getUserEmail);
+
+// Deactivate Account
+router.put('/me/deactivate', authMiddleware.protect, userController.deactivateAccount);
+router.put('/me/reactivate', authMiddleware.protect, userController.reactivateAccount);
+
+// Delete Account
+router.delete('/me', authMiddleware.protect, userController.deleteAccount);
 
 // Favorites and Wishlist
 router.get('/favorites', authMiddleware.protect, userController.getFavorites); // Get the user's favorite activities

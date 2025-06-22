@@ -10,6 +10,12 @@ router.delete('/:id', authMiddleware.protect, bookingController.cancelBooking);
 router.get('/', authMiddleware.protect, bookingController.getUserBookings);
 router.get('/:id', authMiddleware.protect, bookingController.getBookingById);
 
+router.post(
+  '/checkout-multiple',
+  authMiddleware.protect,
+  bookingController.checkoutMultipleBookings
+);
+
 // Admin-specific cancellation
 // Admin cancel a booking
 router.post(

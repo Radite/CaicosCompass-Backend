@@ -2,63 +2,113 @@ const mongoose = require('mongoose');
 
 const BookingSchema = new mongoose.Schema(
   {
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // Primary user making the booking
-    participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // Other users in the booking
-    status: { type: String, enum: ['pending', 'confirmed', 'canceled'], default: 'pending' }, // Booking status
-    activity: { type: mongoose.Schema.Types.ObjectId, ref: 'Activity', required: true }, // Linked activity
-    option: { type: mongoose.Schema.Types.ObjectId, ref: 'Activity.options', required: false }, // Specific activity option, if applicable
-    date: { type: Date, required: true }, // Date of the booking
-    time: { type: String, required: true }, // Time of the booking
-    numOfPeople: { type: Number, required: true }, // Total number of people participating
-    quantity: { type: Number, min: 1, required: false }, // Quantity of equipment, e.g., jet skis or ATVs
-    multiUser: { type: Boolean, default: false }, // Whether it's a multi-user booking
-
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    status: { type: String, enum: ['pending', 'confirmed', 'canceled'], default: 'pending' },
+    category: { 
+      type: String, 
+      enum: ['activity', 'stay', 'transportation'], 
+      required: true, 
+    },
+    // References to the specific service type:
+    activity: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'Activity', 
+      required: function() { return this.category === 'activity'; } 
+    },
+    stay: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'Stay', 
+      required: function() { return this.category === 'stay'; } 
+    },
+    transportation: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'Transportation', 
+      required: function() { return this.category === 'transportation'; } 
+    },
+    // If the booking is for a specific option (for activities or transportation)
+    option: { type: mongoose.Schema.Types.ObjectId, ref: 'Option', required: false },
+    
+    // Common booking fields:
+    numOfPeople: { type: Number, required: true },
+    quantity: { type: Number, min: 1, required: false },
+    multiUser: { type: Boolean, default: false },
+    
+    // For activities and transportation, we use these:
+    date: { 
+      type: Date, 
+      required: function() { 
+        return this.category === 'activity' || this.category === 'transportation'; 
+      } 
+    },
+    time: { 
+      type: String, 
+      required: function() { 
+        return this.category === 'activity' || this.category === 'transportation'; 
+      } 
+    },
+    
+    // For stay bookings:
+    startDate: { 
+      type: Date, 
+      required: function() { return this.category === 'stay'; } 
+    },
+    endDate: { 
+      type: Date, 
+      required: function() { return this.category === 'stay'; } 
+    },
+    
+    // Additional fields for transportation:
+    pickupLocation: { 
+      type: String, 
+      required: function() { return this.category === 'transportation'; } 
+    },
+    dropoffLocation: { 
+      type: String, 
+      required: function() { return this.category === 'transportation'; } 
+    },
+    
     // Payment Details
     paymentDetails: {
-      totalAmount: { type: Number, required: true }, // Total cost of the booking
-      amountPaid: { type: Number, default: 0 }, // Total amount paid so far
-      remainingBalance: {
-        type: Number,
-        default: function () {
-          return this.totalAmount - this.amountPaid;
-        },
-      }, // Automatically calculated balance
+      totalAmount: { type: Number, required: true },
+      amountPaid: { type: Number, default: 0 },
+      remainingBalance: { type: Number, default: 0 },
       payees: [
         {
-          user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // User making a payment
-          amount: { type: Number }, // Amount paid by the user
-          status: { type: String, enum: ['pending', 'paid'], default: 'pending' }, // Payment status
-          paymentMethod: { type: String, enum: ['card', 'cash', 'transfer'], required: true }, // Payment method
+          user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+          amount: { type: Number },
+          status: { type: String, enum: ['pending', 'paid'], default: 'pending' },
+          paymentMethod: { type: String, enum: ['card', 'cash', 'transfer'], required: true },
         },
       ],
     },
-
+    
     // Cancellation Details
     cancellation: {
-      isCanceled: { type: Boolean, default: false }, // Whether the booking is canceled
-      canceledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Who canceled the booking
-      cancellationDate: { type: Date }, // When the booking was canceled
-      refundAmount: { type: Number }, // Amount refunded
-      refundStatus: { type: String, enum: ['pending', 'processed'], default: 'pending' }, // Refund status
+      isCanceled: { type: Boolean, default: false },
+      canceledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      cancellationDate: { type: Date },
+      refundAmount: { type: Number },
+      refundStatus: { type: String, enum: ['pending', 'processed'], default: 'pending' },
     },
-
+    
     // Discounts
     discount: {
-      code: { type: String }, // Promo or discount code applied
-      amount: { type: Number, default: 0 }, // Discount amount or percentage
+      code: { type: String },
+      amount: { type: Number, default: 0 },
     },
-
-    // Activity-Specific Requirements
+    
+    // Activity-Specific Requirements (if needed)
     requirements: {
-      specialNotes: { type: String }, // E.g., "Bring valid ID" or "Must be 18+"
+      specialNotes: { type: String },
       customFields: [
         {
-          fieldName: { type: String }, // E.g., "Diving Certification"
-          value: { type: String }, // E.g., "Certified"
+          fieldName: { type: String },
+          value: { type: String },
         },
       ],
     },
-
+    
     // Notifications
     notifications: [
       {
@@ -68,31 +118,40 @@ const BookingSchema = new mongoose.Schema(
         read: { type: Boolean, default: false },
       },
     ],
-
+    
     // Audit Trail
     audit: [
       {
-        action: { type: String }, // E.g., "Created", "Updated Payment"
-        performedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Who performed the action
+        action: { type: String },
+        performedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         timestamp: { type: Date, default: Date.now },
-        details: { type: String }, // Additional details about the action
+        details: { type: String },
       },
     ],
-
+    
     // Feedback
     feedback: {
-      rating: { type: Number, min: 1, max: 5 }, // User rating for the activity
-      comment: { type: String }, // Feedback comment
+      rating: { type: Number, min: 1, max: 5 },
+      comment: { type: String },
       submittedAt: { type: Date },
     },
-
+    
     // Waivers
     waiver: {
-      isSigned: { type: Boolean, default: false }, // Whether the user has signed the waiver
-      signedAt: { type: Date }, // When the waiver was signed
+      isSigned: { type: Boolean, default: false },
+      signedAt: { type: Date },
     },
   },
   { timestamps: true }
 );
+
+// Pre-save hook to calculate remaining balance
+BookingSchema.pre('save', function (next) {
+  if (this.paymentDetails) {
+    this.paymentDetails.remainingBalance =
+      (this.paymentDetails.totalAmount || 0) - (this.paymentDetails.amountPaid || 0);
+  }
+  next();
+});
 
 module.exports = mongoose.model('Booking', BookingSchema);

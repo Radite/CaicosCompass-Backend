@@ -5,14 +5,14 @@ const CartSchema = new mongoose.Schema(
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     items: [
       {
-        item: { type: mongoose.Schema.Types.ObjectId, ref: 'Activity', required: true }, // Reference to Activity
+        service: { type: mongoose.Schema.Types.ObjectId, ref: 'Service', required: true }, // Reference to Service model
         option: { type: mongoose.Schema.Types.ObjectId, required: false }, // Reference to a specific option (if applicable)
-        quantity: { type: Number, required: true, min: 1 }, // Number of items being booked
+        quantity: { type: Number, required: true, min: 1 }, // Number of services being booked
         selectedDate: { type: Date, required: true }, // Date of booking
         selectedTime: { type: String, required: true }, // Time slot for booking
         numPeople: { type: Number, required: true, min: 1 }, // Number of participants
         multiUser: { type: Boolean, default: false }, // Multi-user reservation flag
-        totalPrice: { type: Number, required: true, min: 0 }, // Total price for the item
+        totalPrice: { type: Number, required: true, min: 0 }, // Total price for the service
         userPayments: { type: Map, of: Number, default: {} }, // Payments for multi-user reservation
         discount: { // Discounts or promo codes applied
           code: { type: String },
