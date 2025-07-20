@@ -318,26 +318,140 @@ exports.getProfile = async (req, res) => {
   }
 };
 
+// Enhanced updateProfile function in userController.js
 exports.updateProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const userId = req.user.id;
+    const updates = req.body;
 
-    if (user) {
-      user.name = req.body.name || user.name;
-      user.username = req.body.username || user.username;
-      user.email = req.body.email || user.email;
-
-      if (req.body.password) {
-        user.password = req.body.password; // Password hashing handled in model
-      }
-
-      const updatedUser = await user.save();
-      res.json(updatedUser);
-    } else {
-      res.status(404).json({ message: 'User not found' });
+    // Find user by ID
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
     }
+
+    // Handle basic profile updates
+    if (updates.name) user.name = updates.name;
+    if (updates.phoneNumber !== undefined) user.phoneNumber = updates.phoneNumber;
+    if (updates.dateOfBirth !== undefined) user.dateOfBirth = updates.dateOfBirth;
+    if (updates.profilePicture) user.profilePicture = updates.profilePicture;
+
+    // Handle travel preferences updates
+    if (updates.travelPreferences) {
+      user.travelPreferences = {
+        ...user.travelPreferences,
+        ...updates.travelPreferences
+      };
+    }
+
+    // Handle accommodation preferences updates
+    if (updates.accommodationPreferences) {
+      user.accommodationPreferences = {
+        ...user.accommodationPreferences,
+        ...updates.accommodationPreferences
+      };
+    }
+
+    // Handle food preferences updates
+    if (updates.foodPreferences) {
+      user.foodPreferences = {
+        ...user.foodPreferences,
+        ...updates.foodPreferences
+      };
+    }
+
+    // Handle group details updates
+    if (updates.groupDetails) {
+      user.groupDetails = {
+        ...user.groupDetails,
+        ...updates.groupDetails
+      };
+    }
+
+    // Handle budget updates
+    if (updates.budget) {
+      user.budget = {
+        ...user.budget,
+        ...updates.budget
+      };
+    }
+
+    // Handle logistics updates
+    if (updates.logistics) {
+      user.logistics = {
+        ...user.logistics,
+        ...updates.logistics
+      };
+    }
+
+    // Handle customization updates
+    if (updates.customization) {
+      user.customization = {
+        ...user.customization,
+        ...updates.customization
+      };
+    }
+
+    // Handle environmental preferences updates
+    if (updates.environmentalPreferences) {
+      user.environmentalPreferences = {
+        ...user.environmentalPreferences,
+        ...updates.environmentalPreferences
+      };
+    }
+
+    // Handle privacy settings updates
+    if (updates.privacySettings) {
+      user.privacySettings = {
+        ...user.privacySettings,
+        ...updates.privacySettings
+      };
+    }
+
+    // Handle array updates
+    if (updates.mustDoActivities !== undefined) {
+      user.mustDoActivities = updates.mustDoActivities;
+    }
+    if (updates.healthConcerns !== undefined) {
+      user.healthConcerns = updates.healthConcerns;
+    }
+    if (updates.seasonalPreferences !== undefined) {
+      user.seasonalPreferences = updates.seasonalPreferences;
+    }
+    if (updates.shoppingPreferences !== undefined) {
+      user.shoppingPreferences = updates.shoppingPreferences;
+    }
+
+    // Handle single field updates
+    if (updates.fitnessLevel) user.fitnessLevel = updates.fitnessLevel;
+    if (updates.lengthOfStay !== undefined) user.lengthOfStay = updates.lengthOfStay;
+    if (updates.privacyRequirements !== undefined) user.privacyRequirements = updates.privacyRequirements;
+
+    // Handle password update separately (if provided)
+    if (updates.password && updates.currentPassword) {
+      const isCurrentPasswordValid = await bcrypt.compare(updates.currentPassword, user.password);
+      if (!isCurrentPasswordValid) {
+        return res.status(400).json({ message: 'Current password is incorrect' });
+      }
+      // Password will be hashed automatically by the pre-save hook
+      user.password = updates.password;
+    }
+
+    // Save the updated user
+    const updatedUser = await user.save();
+
+    // Return user without password
+    const userResponse = updatedUser.toObject();
+    delete userResponse.password;
+    delete userResponse.resetPasswordToken;
+    delete userResponse.resetPasswordExpires;
+    delete userResponse.verificationToken;
+    delete userResponse.verificationTokenExpires;
+
+    res.status(200).json(userResponse);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Error updating profile:', error);
+    res.status(500).json({ message: 'Server error while updating profile' });
   }
 };
 

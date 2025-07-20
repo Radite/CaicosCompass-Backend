@@ -91,7 +91,34 @@ const StaySchema = new mongoose.Schema({
       latitude: { type: Number },
       longitude: { type: Number }
     }
-  }
+  },
+  // Discounts
+discounts: {
+  weekly: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: 0 // % discount for 7+ nights
+  },
+  monthly: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: 0 // % discount for 28+ nights
+  },
+  specials: [{
+    title: { type: String },
+    startDate: { type: Date, required: true },
+    endDate: { type: Date, required: true },
+    percentage: {
+      type: Number,
+      min: 0,
+      max: 100,
+      required: true
+    }
+  }]
+},
+
 });
 
 // Create the discriminator and export the resulting model
