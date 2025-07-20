@@ -1,3 +1,4 @@
+// Service.js (Base Model)
 const mongoose = require('mongoose');
 
 const BaseServiceSchema = new mongoose.Schema(
@@ -17,11 +18,18 @@ const BaseServiceSchema = new mongoose.Schema(
     ],
     island: { type: String, required: true },
 
-    // Reference to the host (User)
-    host: {
+    // Changed from host to vendor
+    vendor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
+      validate: {
+        validator: async function(vendorId) {
+          const user = await mongoose.model('User').findById(vendorId);
+          return user && user.role === 'business-manager' && user.businessProfile?.isApproved;
+        },
+        message: 'Vendor must be an approved business manager'
+      }
     },
 
     reviews: [
@@ -37,5 +45,4 @@ const BaseServiceSchema = new mongoose.Schema(
 );
 
 const Service = mongoose.model('Service', BaseServiceSchema);
-
 module.exports = Service;

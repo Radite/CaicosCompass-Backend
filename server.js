@@ -15,11 +15,15 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(express.json()); // Parse JSON
 app.use(cors({
-  origin: "http://localhost:3000", // your Next.js frontend URL
-  credentials: true,               // allow cookies and credentials to be sent
+  origin: ['http://localhost:3000', 'http://localhost:3001'], // Add your frontend URLs
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+app.use(express.json({ limit: '50mb' })); // Increase from default 100kb
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 app.use(helmet());
 

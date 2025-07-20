@@ -1,3 +1,6 @@
+// =====================================
+
+// WellnessSpa.js
 const mongoose = require('mongoose');
 const Service = require('./Service');
 
@@ -11,11 +14,10 @@ const WellnessSpaSchema = new mongoose.Schema({
     {
       name: { type: String, required: true },
       description: { type: String },
-      duration: { type: Number, required: true }, // Duration in minutes
+      duration: { type: Number, required: true },
       price: { type: Number, required: true },
       discountedPrice: { type: Number },
       category: { type: String, enum: ['Massage', 'Facial', 'Body Treatment', 'Wellness Therapy', 'Other'] },
-      // Replace availableSlots with weekly schedule
       weeklyAvailability: [
         {
           day: { 
@@ -27,13 +29,12 @@ const WellnessSpaSchema = new mongoose.Schema({
             {
               startTime: { type: String, required: true },
               endTime: { type: String, required: true },
-              maxBookings: { type: Number, default: 1 } // Optional: number of simultaneous bookings allowed
+              maxBookings: { type: Number, default: 1 }
             }
           ],
-          isAvailable: { type: Boolean, default: true } // To easily disable a day
+          isAvailable: { type: Boolean, default: true }
         }
       ],
-      // For specific date exceptions (holidays, special events, etc.)
       dateExceptions: [
         {
           date: { type: Date, required: true },
@@ -45,7 +46,7 @@ const WellnessSpaSchema = new mongoose.Schema({
               maxBookings: { type: Number, default: 1 }
             }
           ],
-          reason: { type: String } // e.g., "Holiday", "Special Event", etc.
+          reason: { type: String }
         }
       ],
       images: [
@@ -88,10 +89,8 @@ const WellnessSpaSchema = new mongoose.Schema({
   cancellationPolicy: { type: String },
   paymentOptions: [
     { type: String, enum: ['Cash', 'Credit Card', 'Mobile Payment', 'Cryptocurrency'] }
-  ],
-  host: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  ]
+  // Removed host field - vendor is inherited from Service base model
 });
 
 module.exports = Service.discriminator('WellnessSpa', WellnessSpaSchema);

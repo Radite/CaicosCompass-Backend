@@ -1,3 +1,7 @@
+
+// =====================================
+
+// Activity.js
 const mongoose = require('mongoose');
 const Service = require('./Service');
 
@@ -20,8 +24,8 @@ const ActivitySchema = new mongoose.Schema({
       },
       description: { type: String },
       location: { type: String },
-      maxPeople: { type: Number, required: true }, // Max people per option
-      duration: { type: Number, required: true }, // Custom duration per option (in minutes/hours)
+      maxPeople: { type: Number, required: true },
+      duration: { type: Number, required: true },
       availability: [
         {
           day: { 
@@ -31,9 +35,9 @@ const ActivitySchema = new mongoose.Schema({
           },
           timeSlots: [
             {
-              startTime: { type: String, required: true },  // Example: '09:00 AM'
-              endTime: { type: String, required: true },    // Example: '10:00 AM'
-              maxPeople: { type: Number, required: true }   // Max people per slot
+              startTime: { type: String, required: true },
+              endTime: { type: String, required: true },
+              maxPeople: { type: Number, required: true }
             }
           ]
         }
@@ -78,13 +82,11 @@ const ActivitySchema = new mongoose.Schema({
     {
       title: { type: String, required: true },
       description: { type: String },
-      url: { type: String } // Link to waiver document
+      url: { type: String }
     }
   ],
-  cancellationPolicy: { type: String },
-  host: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // Reference to the user model
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  cancellationPolicy: { type: String }
+  // Removed host field - vendor is inherited from Service base model
 });
 
 module.exports = Service.discriminator('Activity', ActivitySchema);

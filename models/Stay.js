@@ -1,3 +1,7 @@
+
+
+// =====================================
+
 // Stay.js
 const mongoose = require('mongoose');
 const Service = require('./Service');
@@ -15,23 +19,18 @@ const StaySchema = new mongoose.Schema({
   bathrooms: { type: Number, required: true },
   beds: { type: Number, required: true },
   
-  // Unavailability dates
   unavailableDates: [{
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true }
   }],
   
-  // Amenities
   amenities: {
-    // Basic amenities (boolean flags)
     hotTub: { type: Boolean, default: false },
     ac: { type: Boolean, default: false },
     pool: { type: Boolean, default: false },
     wifi: { type: Boolean, default: false },
     freeParking: { type: Boolean, default: false },
     beachfront: { type: Boolean, default: false },
-    
-    // Essentials
     kitchen: { type: Boolean, default: false },
     washer: { type: Boolean, default: false },
     dryer: { type: Boolean, default: false },
@@ -40,8 +39,6 @@ const StaySchema = new mongoose.Schema({
     tv: { type: Boolean, default: false },
     hairDryer: { type: Boolean, default: false },
     iron: { type: Boolean, default: false },
-    
-    // Features
     evCharger: { type: Boolean, default: false },
     crib: { type: Boolean, default: false },
     kingBed: { type: Boolean, default: false },
@@ -50,37 +47,29 @@ const StaySchema = new mongoose.Schema({
     breakfast: { type: Boolean, default: false },
     indoorFireplace: { type: Boolean, default: false },
     smokingAllowed: { type: Boolean, default: false },
-    
-    // Safety features
     smokeAlarm: { type: Boolean, default: false },
     carbonMonoxideAlarm: { type: Boolean, default: false }
   },
   
-  // Booking options
   bookingOptions: {
     instantBook: { type: Boolean, default: false },
     selfCheckIn: { type: Boolean, default: false },
     allowPets: { type: Boolean, default: false }
   },
   
-  // Tags
   tags: {
     isLuxe: { type: Boolean, default: false },
     isGuestFavorite: { type: Boolean, default: false }
   },
   
-  // Policies
   policies: {
-    checkInTime: { type: String, default: '15:00' }, // Default 3pm
-    checkOutTime: { type: String, default: '10:00' }, // Default 10am
+    checkInTime: { type: String, default: '15:00' },
+    checkOutTime: { type: String, default: '10:00' },
     cancellationPolicy: { type: String, enum: ['Flexible', 'Moderate', 'Strict', 'Non-refundable'], default: 'Moderate' }
   },
   
-  // Changed to stayImages to avoid conflict with parent model
   stayImages: [{ type: String }],
-  // Changed to stayDescription to avoid potential conflict
   stayDescription: { type: String },
-  // Changed to addressDetails to avoid conflict with parent model
   addressDetails: {
     address: { type: String, required: true },
     city: { type: String, required: true },
@@ -92,35 +81,33 @@ const StaySchema = new mongoose.Schema({
       longitude: { type: Number }
     }
   },
-  // Discounts
-discounts: {
-  weekly: {
-    type: Number,
-    min: 0,
-    max: 100,
-    default: 0 // % discount for 7+ nights
-  },
-  monthly: {
-    type: Number,
-    min: 0,
-    max: 100,
-    default: 0 // % discount for 28+ nights
-  },
-  specials: [{
-    title: { type: String },
-    startDate: { type: Date, required: true },
-    endDate: { type: Date, required: true },
-    percentage: {
+  
+  discounts: {
+    weekly: {
       type: Number,
       min: 0,
       max: 100,
-      required: true
-    }
-  }]
-},
-
+      default: 0
+    },
+    monthly: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0
+    },
+    specials: [{
+      title: { type: String },
+      startDate: { type: Date, required: true },
+      endDate: { type: Date, required: true },
+      percentage: {
+        type: Number,
+        min: 0,
+        max: 100,
+        required: true
+      }
+    }]
+  }
+  // Removed host field - vendor is inherited from Service base model
 });
 
-// Create the discriminator and export the resulting model
-const Stay = Service.discriminator('Stay', StaySchema);
-module.exports = Stay;
+module.exports = Service.discriminator('Stay', StaySchema);

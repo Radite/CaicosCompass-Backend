@@ -1,3 +1,6 @@
+// =====================================
+
+// Shopping.js
 const mongoose = require('mongoose');
 const Service = require('./Service');
 
@@ -18,7 +21,7 @@ const ShoppingSchema = new mongoose.Schema({
       description: { type: String },
       price: { type: Number, required: true },
       discountedPrice: { type: Number },
-      category: { type: String, required: true }, // e.g., Clothing, Jewelry, Art, Souvenirs
+      category: { type: String, required: true },
       images: [
         {
           url: { type: String, required: true },
@@ -39,8 +42,8 @@ const ShoppingSchema = new mongoose.Schema({
         enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'], 
         required: true 
       },
-      openTime: { type: String, required: true }, // Example: '09:00 AM'
-      closeTime: { type: String, required: true } // Example: '09:00 PM'
+      openTime: { type: String, required: true },
+      closeTime: { type: String, required: true }
     }
   ],
   customClosures: [
@@ -52,10 +55,8 @@ const ShoppingSchema = new mongoose.Schema({
   paymentOptions: [
     { type: String, enum: ['Cash', 'Credit Card', 'Mobile Payment', 'Cryptocurrency'] }
   ],
-  deliveryAvailable: { type: Boolean, default: false },
-  host: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  deliveryAvailable: { type: Boolean, default: false }
+  // Removed host field - vendor is inherited from Service base model
 });
 
 module.exports = Service.discriminator('Shopping', ShoppingSchema);

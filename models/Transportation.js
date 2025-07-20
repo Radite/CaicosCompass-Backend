@@ -1,3 +1,7 @@
+
+// =====================================
+
+// Transportation.js
 const mongoose = require('mongoose');
 const Service = require('./Service');
 
@@ -44,7 +48,6 @@ const TransportationSchema = new mongoose.Schema({
   ],
 
   capacity: { type: Number },  
-
   amenities: [{ type: String }],  
 
   specialConditions: {
@@ -153,8 +156,12 @@ const TransportationSchema = new mongoose.Schema({
       discountPercentage: { type: Number },
       validUntil: { type: Date },
     },
-  ],
+  ]
+  // Removed host field - vendor is inherited from Service base model
 },
 { discriminatorKey: 'serviceType', timestamps: true });
 
 module.exports = Service.discriminator('Transportation', TransportationSchema);
+
+
+

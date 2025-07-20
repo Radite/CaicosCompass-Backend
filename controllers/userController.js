@@ -123,10 +123,20 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 // User Registration Function
 exports.registerUser = async (req, res) => {
   try {
-    const { name, username, email, password } = req.body;
+    const { name, username, email, password, role, businessProfile, phoneNumber } = req.body;
 
-    if (!name || !username || !email || !password) {
-      return res.status(400).json({ message: 'All fields are required' });
+    // Generate username if not provided (for business users)
+    const finalUsername = username || email.split('@')[0] + '_' + Date.now();
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: 'Name, email, and password are required' });
+    }
+
+    // Additional validation for business users
+    if (role === 'business-manager') {
+      if (!businessProfile || !businessProfile.businessName || !businessProfile.businessType) {
+        return res.status(400).json({ message: 'Business name and type are required for business accounts' });
+      }
     }
 
     const existingUser = await User.findOne({ email });
@@ -134,29 +144,56 @@ exports.registerUser = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Generate email verification token
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    console.log('Generated Verification Token:', verificationToken);
-
-    const verificationTokenExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours expiration
-
-    const user = await User.create({
+    const userData = {
       name,
-      username,
+      username: finalUsername,
       email,
       password,
-      verificationToken,
-      verificationTokenExpires,
-    });
+      phoneNumber,
+      role: role || 'user',
+    };
 
-    // Generate verification link
-    const verificationLink = `${process.env.FRONTEND_URL}/--/verify-email?token=${verificationToken}`;
-    console.log('Generated Verification Link:', verificationLink);
-    await sendVerificationEmail(user.email, verificationLink);
+    // Handle verification based on role
+    if (role === 'business-manager') {
+      // Business managers don't need email verification
+      userData.isVerified = true;
+      userData.verificationToken = null;
+      userData.verificationTokenExpires = null;
+    } else {
+      // Regular users need email verification
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      console.log('Generated Verification Token:', verificationToken);
+      
+      userData.verificationToken = verificationToken;
+      userData.verificationTokenExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours expiration
+      userData.isVerified = false;
+    }
 
-    res.status(201).json({
-      message: 'User registered successfully. Please check your email for verification link.',
-    });
+    // Add business profile for business managers
+    if (role === 'business-manager' && businessProfile) {
+      userData.businessProfile = businessProfile;
+    }
+
+    const user = await User.create(userData);
+
+    // Send verification email only for non-business users
+    if (role !== 'business-manager') {
+      const verificationLink = `${process.env.FRONTEND_URL}/--/verify-email?token=${userData.verificationToken}`;
+      console.log('Generated Verification Link:', verificationLink);
+      await sendVerificationEmail(user.email, verificationLink);
+    }
+
+    // Send appropriate response based on role
+    if (role === 'business-manager') {
+      // TODO: Send admin notification email here
+      res.status(201).json({
+        message: 'Business application submitted successfully! Your application will be reviewed within 24-48 hours. You will receive an email notification once approved.',
+      });
+    } else {
+      res.status(201).json({
+        message: 'User registered successfully. Please check your email for verification link.',
+      });
+    }
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -224,16 +261,17 @@ exports.loginUser = async (req, res) => {
 
     console.log("Generated Token:", token); // 🔥 Check if token is generated
 
-    res.status(200).json({
-      success: true,
-      token,
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    });
+res.status(200).json({
+  success: true,
+  token,
+  user: {
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    businessProfile: user.businessProfile, // Include for frontend routing
+  },
+});
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ message: error.message });
