@@ -294,6 +294,18 @@ fileType: {
     enum: ['active', 'deactivated'],
     default: 'active'
   },
+  googleId: {
+  type: String,
+  sparse: true
+},
+facebookId: {
+  type: String,
+  sparse: true
+},
+appleId: {
+  type: String,
+  sparse: true
+},
   deactivatedAt: { type: Date }
 }, { timestamps: true });
 

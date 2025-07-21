@@ -7,7 +7,18 @@ const authMiddleware = require('../middleware/authMiddleware');
 router.post('/register', userController.registerUser); // Register a new user
 router.post('/login', userController.loginUser); // Login with email and password
 router.post('/logout', authMiddleware.protect, userController.logoutUser); // Logout the user
-router.post('/google', userController.googleLogin); // Google OAuth login
+// Google OAuth
+router.get('/auth/google', userController.googleLogin);
+router.get('/auth/google/callback', userController.googleCallback);
+
+// Facebook OAuth
+router.get('/auth/facebook', userController.facebookLogin);
+router.get('/auth/facebook/callback', userController.facebookCallback);
+
+// Apple OAuth
+router.get('/auth/apple', userController.appleLogin);
+router.get('/auth/apple/callback', userController.appleCallback);
+
 // Forgot password route
 router.post('/forgot-password', userController.forgotPassword);
 router.post('/refresh', userController.refreshToken);

@@ -1,6 +1,10 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const FacebookStrategy = require('passport-facebook').Strategy;
+const AppleStrategy = require('passport-apple').Strategy;
 const { OAuth2Client } = require('google-auth-library');
 const { generateToken } = require('../utils/jwtUtils');
 const Activity = require('../models/Activity');
@@ -13,6 +17,170 @@ const { sendVerificationEmail } = require('./emailService');  // Ensure correct 
 const crypto = require('crypto');
 const { sendPasswordResetEmail } = require('./emailService');
 
+// Google OAuth Client
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// Passport Configuration
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: process.env.GOOGLE_CALLBACK_URL
+}, async (accessToken, refreshToken, profile, done) => {
+  try {
+    let user = await User.findOne({ 
+      $or: [
+        { googleId: profile.id },
+        { email: profile.emails[0].value }
+      ]
+    });
+
+    if (user) {
+      // Update Google ID if user exists but doesn't have it
+      if (!user.googleId) {
+        user.googleId = profile.id;
+        await user.save();
+      }
+      return done(null, user);
+    }
+
+    // Create new user
+    user = new User({
+      googleId: profile.id,
+      name: profile.displayName,
+      email: profile.emails[0].value,
+      username: profile.emails[0].value.split('@')[0] + '_' + Date.now(),
+      isVerified: true, // OAuth users are pre-verified
+      role: 'user'
+    });
+
+    await user.save();
+    done(null, user);
+  } catch (error) {
+    done(error, null);
+  }
+}));
+
+passport.use(new FacebookStrategy({
+  clientID: process.env.FACEBOOK_APP_ID,
+  clientSecret: process.env.FACEBOOK_APP_SECRET,
+  callbackURL: process.env.FACEBOOK_CALLBACK_URL,
+  profileFields: ['id', 'displayName', 'emails']
+}, async (accessToken, refreshToken, profile, done) => {
+  try {
+    let user = await User.findOne({ 
+      $or: [
+        { facebookId: profile.id },
+        { email: profile.emails[0].value }
+      ]
+    });
+
+    if (user) {
+      if (!user.facebookId) {
+        user.facebookId = profile.id;
+        await user.save();
+      }
+      return done(null, user);
+    }
+
+    user = new User({
+      facebookId: profile.id,
+      name: profile.displayName,
+      email: profile.emails[0].value,
+      username: profile.emails[0].value.split('@')[0] + '_' + Date.now(),
+      isVerified: true,
+      role: 'user'
+    });
+
+    await user.save();
+    done(null, user);
+  } catch (error) {
+    done(error, null);
+  }
+}));
+
+passport.use(new AppleStrategy({
+  clientID: process.env.APPLE_CLIENT_ID,
+  teamID: process.env.APPLE_TEAM_ID,
+  keyID: process.env.APPLE_KEY_ID,
+  privateKey: process.env.APPLE_PRIVATE_KEY,
+  callbackURL: process.env.APPLE_CALLBACK_URL
+}, async (accessToken, refreshToken, profile, done) => {
+  try {
+    let user = await User.findOne({ 
+      $or: [
+        { appleId: profile.id },
+        { email: profile.email }
+      ]
+    });
+
+    if (user) {
+      if (!user.appleId) {
+        user.appleId = profile.id;
+        await user.save();
+      }
+      return done(null, user);
+    }
+
+    user = new User({
+      appleId: profile.id,
+      name: profile.displayName || 'User',
+      email: profile.email,
+      username: profile.email.split('@')[0] + '_' + Date.now(),
+      isVerified: true,
+      role: 'user'
+    });
+
+    await user.save();
+    done(null, user);
+  } catch (error) {
+    done(error, null);
+  }
+}));
+
+// OAuth Controllers
+exports.googleLogin = passport.authenticate('google', {
+  scope: ['profile', 'email']
+});
+
+exports.googleCallback = passport.authenticate('google', { session: false }), (req, res) => {
+  const token = jwt.sign({ id: req.user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  
+  // Redirect to frontend with token
+  res.redirect(`${process.env.FRONTEND_URL}/auth/success?token=${token}&user=${encodeURIComponent(JSON.stringify({
+    _id: req.user._id,
+    name: req.user.name,
+    email: req.user.email,
+    role: req.user.role
+  }))}`);
+};
+
+exports.facebookLogin = passport.authenticate('facebook', {
+  scope: ['email']
+});
+
+exports.facebookCallback = passport.authenticate('facebook', { session: false }), (req, res) => {
+  const token = jwt.sign({ id: req.user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  
+  res.redirect(`${process.env.FRONTEND_URL}/auth/success?token=${token}&user=${encodeURIComponent(JSON.stringify({
+    _id: req.user._id,
+    name: req.user.name,
+    email: req.user.email,
+    role: req.user.role
+  }))}`);
+};
+
+exports.appleLogin = passport.authenticate('apple');
+
+exports.appleCallback = passport.authenticate('apple', { session: false }), (req, res) => {
+  const token = jwt.sign({ id: req.user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  
+  res.redirect(`${process.env.FRONTEND_URL}/auth/success?token=${token}&user=${encodeURIComponent(JSON.stringify({
+    _id: req.user._id,
+    name: req.user.name,
+    email: req.user.email,
+    role: req.user.role
+  }))}`);
+};
 
 exports.getUserEmail = async (req, res) => {
   try {
@@ -116,8 +284,6 @@ exports.postResetPassword = async (req, res) => {
   }
 };
 
-// Google OAuth Client
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // User Registration
 // User Registration Function
@@ -304,47 +470,6 @@ exports.refreshToken = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-
-exports.googleLogin = [
-  check('token', 'Google token is required').notEmpty(),
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    try {
-      const { token } = req.body;
-
-      const ticket = await googleClient.verifyIdToken({
-        idToken: token,
-        audience: process.env.GOOGLE_CLIENT_ID,
-      });
-
-      const payload = ticket.getPayload();
-      let user = await User.findOne({ email: payload.email });
-
-      if (!user) {
-        user = await User.create({
-          name: payload.name,
-          email: payload.email,
-          authProvider: 'google',
-          providerId: payload.sub,
-        });
-      }
-
-      res.json({
-        _id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        token: generateToken(user.id),
-      });
-    } catch (error) {
-      res.status(500).json({ message: 'Error processing request' });
-    }
-  },
-];
 
 // User Profile
 exports.getProfile = async (req, res) => {
