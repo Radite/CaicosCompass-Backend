@@ -20,17 +20,46 @@ const { sendPasswordResetEmail } = require('./emailService');
 // Google OAuth Client
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-// Passport Configuration
+// Add Passport session configuration (required for OAuth)
+passport.serializeUser((user, done) => {
+  done(null, user._id);
+});
+
+passport.deserializeUser(async (id, done) => {
+  try {
+    const user = await User.findById(id);
+    done(null, user);
+  } catch (error) {
+    done(error, null);
+  }
+});
+
+// Updated Google Strategy with better error handling
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
   callbackURL: process.env.GOOGLE_CALLBACK_URL
 }, async (accessToken, refreshToken, profile, done) => {
   try {
+    console.log('🔍 Google Strategy called with profile:', {
+      id: profile.id,
+      name: profile.displayName,
+      email: profile.emails?.[0]?.value,
+      photos: profile.photos?.[0]?.value
+    });
+
+    // Check if profile has email
+    if (!profile.emails || !profile.emails[0] || !profile.emails[0].value) {
+      console.error('❌ No email found in Google profile');
+      return done(new Error('No email found in Google profile'), null);
+    }
+
+    const email = profile.emails[0].value;
+
     let user = await User.findOne({ 
       $or: [
         { googleId: profile.id },
-        { email: profile.emails[0].value }
+        { email: email }
       ]
     });
 
@@ -39,26 +68,95 @@ passport.use(new GoogleStrategy({
       if (!user.googleId) {
         user.googleId = profile.id;
         await user.save();
+        console.log(`✅ Added Google ID to existing user: ${user.email}`);
+      } else {
+        console.log(`✅ Existing Google user found: ${user.email}`);
       }
       return done(null, user);
     }
 
     // Create new user
+    console.log('🔄 Creating new user from Google OAuth...');
+    
     user = new User({
       googleId: profile.id,
       name: profile.displayName,
-      email: profile.emails[0].value,
-      username: profile.emails[0].value.split('@')[0] + '_' + Date.now(),
-      isVerified: true, // OAuth users are pre-verified
-      role: 'user'
+      email: email,
+      username: email.split('@')[0] + '_google_' + Date.now(),
+      isVerified: true, // Google accounts are pre-verified
+      role: 'user',
+      profilePicture: profile.photos && profile.photos[0] ? profile.photos[0].value : null
     });
 
-    await user.save();
-    done(null, user);
+    const savedUser = await user.save();
+    console.log(`✅ New Google user created successfully:`, {
+      id: savedUser._id,
+      email: savedUser.email,
+      name: savedUser.name,
+      googleId: savedUser.googleId
+    });
+    
+    return done(null, savedUser);
   } catch (error) {
-    done(error, null);
+    console.error('❌ Error in Google OAuth strategy:', error);
+    return done(error, null);
   }
 }));
+
+// Google OAuth routes
+exports.googleLogin = passport.authenticate('google', {
+  scope: ['profile', 'email']
+});
+
+// Updated callback with better error handling
+exports.googleCallback = [
+  passport.authenticate('google', { 
+    session: false,
+    failureRedirect: `${process.env.FRONTEND_URL}/auth/error?message=Authentication failed`
+  }),
+  async (req, res) => {
+    try {
+      console.log('🔄 Google OAuth callback reached');
+      
+      // Check if user exists
+      if (!req.user) {
+        console.error('❌ No user found in req.user');
+        return res.redirect(`${process.env.FRONTEND_URL}/auth/error?message=User authentication failed`);
+      }
+
+      console.log('✅ User authenticated:', {
+        id: req.user._id,
+        email: req.user.email,
+        name: req.user.name
+      });
+
+      // Generate JWT token
+      const token = jwt.sign(
+        { id: req.user._id }, 
+        process.env.JWT_SECRET, 
+        { expiresIn: '7d' }
+      );
+      
+      // Prepare user data for frontend
+      const userData = {
+        _id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+        role: req.user.role,
+        isVerified: req.user.isVerified,
+        profilePicture: req.user.profilePicture
+      };
+      
+      console.log('✅ Google OAuth successful, redirecting user:', userData.email);
+      
+      // Redirect to frontend with token and user data
+      res.redirect(`${process.env.FRONTEND_URL}/auth/success?token=${token}&user=${encodeURIComponent(JSON.stringify(userData))}`);
+    } catch (error) {
+      console.error('❌ Error in Google OAuth callback:', error);
+      res.redirect(`${process.env.FRONTEND_URL}/auth/error?message=Login failed`);
+    }
+  }
+];
 
 passport.use(new FacebookStrategy({
   clientID: process.env.FACEBOOK_APP_ID,
@@ -137,22 +235,7 @@ passport.use(new AppleStrategy({
   }
 }));
 
-// OAuth Controllers
-exports.googleLogin = passport.authenticate('google', {
-  scope: ['profile', 'email']
-});
 
-exports.googleCallback = passport.authenticate('google', { session: false }), (req, res) => {
-  const token = jwt.sign({ id: req.user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-  
-  // Redirect to frontend with token
-  res.redirect(`${process.env.FRONTEND_URL}/auth/success?token=${token}&user=${encodeURIComponent(JSON.stringify({
-    _id: req.user._id,
-    name: req.user.name,
-    email: req.user.email,
-    role: req.user.role
-  }))}`);
-};
 
 exports.facebookLogin = passport.authenticate('facebook', {
   scope: ['email']

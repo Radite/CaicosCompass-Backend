@@ -17,7 +17,7 @@ const UserSchema = new mongoose.Schema({
   verificationToken: { type: String },
   verificationTokenExpires: { type: Date },
   profilePicture: { type: String },
-  authProvider: { type: String, enum: ['local', 'google', 'facebook'], default: 'local' },
+  authProvider: { type: String, enum: ['local', 'google', 'facebook', 'apple'], default: 'local' },
   providerId: { type: String },
   resetPasswordToken: { type: String },
   resetPasswordExpires: { type: Date },
