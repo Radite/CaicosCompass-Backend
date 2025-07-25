@@ -40,6 +40,7 @@ app.use('/api/transportations', require('./routes/transportationRoutes'));
 app.use('/api/dinings', require('./routes/diningRoutes'));
 app.use('/api/services', require('./routes/serviceRoutes'));
 app.use('/api/reviews', require('./routes/reviewRoutes'));
+app.use('/api/vendor', require('./routes/vendorRoutes'));
 
 // Home Route
 app.get('/', (req, res) => {

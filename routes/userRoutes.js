@@ -131,4 +131,16 @@ router.post(
   userController.manageListings
 );
 
+
+// added for vendor dashboard error
+// Get user profile (needed by vendor dashboard)
+router.get('/profile', authMiddleware.protect, userController.getProfile);
+
+// Update business profile  
+router.put('/business-profile', authMiddleware.protect, authMiddleware.businessManagerProtect, userController.updateBusinessProfile);
+
+// Change password
+router.put('/change-password', authMiddleware.protect, userController.changePassword);
+
 module.exports = router;
+

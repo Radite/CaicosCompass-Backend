@@ -244,14 +244,13 @@ fileType: {
   privacyRequirements: { type: Boolean, default: false },
   lengthOfStay: { type: Number },
 
-  notifications: [
-    {
-      type: { type: String },
-      message: { type: String },
-      read: { type: Boolean, default: false },
-      createdAt: { type: Date, default: Date.now }
-    }
-  ],
+  notifications: [{
+    type: String,
+    title: String,
+    message: String,
+    read: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now }
+  }],
   
   itinerary: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Booking' }],
   cart: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Cart' }],
