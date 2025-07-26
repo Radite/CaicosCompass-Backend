@@ -28,6 +28,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 app.use(helmet());
 app.use(passport.initialize());
+
 // Routes
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/favorites-wishlist', require('./routes/favoriteWishlistRoutes'));
@@ -43,6 +44,9 @@ app.use('/api/reviews', require('./routes/reviewRoutes'));
 app.use('/api/vendor', require('./routes/vendorRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 
+// FAQ Routes
+app.use('/api/faqs', require('./routes/faqRoutes'));
+app.use('/api/categories', require('./routes/categoryRoutes'));
 
 // Home Route
 app.get('/', (req, res) => {
