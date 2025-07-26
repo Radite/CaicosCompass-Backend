@@ -403,8 +403,8 @@ exports.registerUser = async (req, res) => {
     };
 
     // Handle verification based on role
-    if (role === 'business-manager') {
-      // Business managers don't need email verification
+    if (role === 'business-manager' || role === 'admin') {
+      // Business managers and admins don't need email verification
       userData.isVerified = true;
       userData.verificationToken = null;
       userData.verificationTokenExpires = null;
@@ -425,8 +425,8 @@ exports.registerUser = async (req, res) => {
 
     const user = await User.create(userData);
 
-    // Send verification email only for non-business users
-    if (role !== 'business-manager') {
+    // Send verification email only for regular users (not business-manager or admin)
+    if (role !== 'business-manager' && role !== 'admin') {
       const verificationLink = `${process.env.FRONTEND_URL}/--/verify-email?token=${userData.verificationToken}`;
       console.log('Generated Verification Link:', verificationLink);
       await sendVerificationEmail(user.email, verificationLink);
@@ -437,6 +437,17 @@ exports.registerUser = async (req, res) => {
       // TODO: Send admin notification email here
       res.status(201).json({
         message: 'Business application submitted successfully! Your application will be reviewed within 24-48 hours. You will receive an email notification once approved.',
+      });
+    } else if (role === 'admin') {
+      res.status(201).json({
+        message: 'Admin user created successfully and is ready to use.',
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          isVerified: user.isVerified
+        }
       });
     } else {
       res.status(201).json({
