@@ -43,6 +43,7 @@ app.use('/api/services', require('./routes/serviceRoutes'));
 app.use('/api/reviews', require('./routes/reviewRoutes'));
 app.use('/api/vendor', require('./routes/vendorRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/info', require('./routes/infoRoutes'));
 
 // FAQ Routes
 app.use('/api/faqs', require('./routes/faqRoutes'));
