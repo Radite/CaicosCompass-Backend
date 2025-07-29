@@ -5,6 +5,7 @@ const Dining = require('../models/Dining');
 const Activity = require('../models/Activity');
 const Transportation = require('../models/Transportation');
 const AuditLog = require('../models/AuditLog');
+const { sendBusinessApprovalEmail } = require('./emailService');
 
 // Dashboard Statistics
 exports.getDashboardStats = async (req, res) => {
@@ -901,11 +902,28 @@ exports.getVendors = async (req, res) => {
 };
 
 // Approve Vendor
+// Update your approveVendor function (replace the existing one)
 exports.approveVendor = async (req, res) => {
   try {
     const { vendorId } = req.params;
     
-    const vendor = await User.findByIdAndUpdate(
+    // Find the vendor first to get their information
+    const vendor = await User.findById(vendorId).select('-password');
+    
+    if (!vendor) {
+      return res.status(404).json({ message: 'Vendor not found' });
+    }
+
+    if (vendor.role !== 'business-manager') {
+      return res.status(400).json({ message: 'User is not a business manager' });
+    }
+
+    if (vendor.businessProfile?.isApproved) {
+      return res.status(400).json({ message: 'Business is already approved' });
+    }
+
+    // Update vendor approval status
+    const updatedVendor = await User.findByIdAndUpdate(
       vendorId,
       { 
         'businessProfile.isApproved': true,
@@ -916,20 +934,100 @@ exports.approveVendor = async (req, res) => {
       { new: true }
     ).select('-password');
 
+    // Send business approval email
+    try {
+      await sendBusinessApprovalEmail(
+        updatedVendor.email, 
+        updatedVendor.businessProfile, 
+        updatedVendor.name
+      );
+      console.log(`✅ Business approval email sent to ${updatedVendor.email}`);
+    } catch (emailError) {
+      console.error('❌ Failed to send business approval email:', emailError);
+      // Don't fail the approval if email fails, just log it
+      // The business is still approved, but we should notify admins about email failure
+    }
+
+    // Log audit action (if you have this function)
+    if (typeof logAuditAction === 'function') {
+      try {
+        await logAuditAction(req.user.id, 'vendor_approve', 'vendor_management', {
+          vendorId: vendorId,
+          vendorEmail: updatedVendor.email,
+          businessName: updatedVendor.businessProfile?.businessName
+        }, req);
+      } catch (auditError) {
+        console.error('❌ Failed to log audit action:', auditError);
+      }
+    }
+
+    res.json({ 
+      message: 'Vendor approved successfully and notification email sent', 
+      vendor: updatedVendor,
+      emailSent: true
+    });
+
+  } catch (error) {
+    console.error('Error approving vendor:', error);
+    res.status(500).json({ message: 'Error approving vendor' });
+  }
+};
+
+// Optional: Enhanced reject function with email notification
+exports.rejectVendor = async (req, res) => {
+  try {
+    const { vendorId } = req.params;
+    const { rejectionReason } = req.body;
+    
+    // Find the vendor first
+    const vendor = await User.findById(vendorId).select('-password');
+    
     if (!vendor) {
       return res.status(404).json({ message: 'Vendor not found' });
     }
 
-    await logAuditAction(req.user.id, 'vendor_approve', 'vendor_management', {
-      vendorId: vendorId,
-      vendorEmail: vendor.email,
-      businessName: vendor.businessProfile?.businessName
-    }, req);
+    if (vendor.role !== 'business-manager') {
+      return res.status(400).json({ message: 'User is not a business manager' });
+    }
 
-    res.json({ message: 'Vendor approved successfully', vendor });
+    // Update vendor rejection status
+    const updatedVendor = await User.findByIdAndUpdate(
+      vendorId,
+      { 
+        'businessProfile.isApproved': false,
+        'businessProfile.rejectionReason': rejectionReason,
+        'businessProfile.rejectedAt': new Date(),
+        'businessProfile.rejectedBy': req.user.id,
+        updatedAt: new Date()
+      },
+      { new: true }
+    ).select('-password');
+
+    // TODO: You could add a business rejection email function here
+    // await sendBusinessRejectionEmail(updatedVendor.email, rejectionReason, updatedVendor.name);
+
+    // Log audit action (if you have this function)
+    if (typeof logAuditAction === 'function') {
+      try {
+        await logAuditAction(req.user.id, 'vendor_reject', 'vendor_management', {
+          vendorId: vendorId,
+          vendorEmail: updatedVendor.email,
+          businessName: updatedVendor.businessProfile?.businessName,
+          rejectionReason
+        }, req);
+      } catch (auditError) {
+        console.error('❌ Failed to log audit action:', auditError);
+      }
+    }
+
+    res.json({ 
+      message: 'Vendor rejected successfully', 
+      vendor: updatedVendor 
+    });
+
   } catch (error) {
-    console.error('Error approving vendor:', error);
-    res.status(500).json({ message: 'Error approving vendor' });
+    console.error('Error rejecting vendor:', error);
+    res.status(500).json({ message: 'Error rejecting vendor' });
   }
 };
 

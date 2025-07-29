@@ -20,13 +20,10 @@ router.get('/auth/apple', userController.appleLogin);
 router.get('/auth/apple/callback', userController.appleCallback);
 
 // Forgot password route
-router.post('/forgot-password', userController.forgotPassword);
 router.post('/refresh', userController.refreshToken);
 // Reset password verification route (GET)
-router.get('/reset-password/:token', userController.resetPassword);
 
 // Post reset password route (POST)
-router.post('/reset-password/:token', userController.postResetPassword);
 router.post('/resend-verification', userController.resendVerificationEmail);
 router.get('/verify-email', userController.verifyEmail);
 

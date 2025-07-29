@@ -13,7 +13,7 @@ const Dining = require('../models/Dining');
 const Transportation = require('../models/Transportation');
 const { check, validationResult } = require('express-validator');
 const nodemailer = require('nodemailer');
-const { sendVerificationEmail } = require('./emailService');  // Ensure correct path
+const { sendVerificationEmail, sendBusinessApplicationEmail } = require('./emailService');
 const crypto = require('crypto');
 const { sendPasswordResetEmail } = require('./emailService');
 
@@ -285,7 +285,7 @@ exports.getUserEmail = async (req, res) => {
 
 // Forgot Password Handler
 // Forgot Password Handler
-// Backend: Generate reset token and send email
+// Backend: Generate reset token and  email
 exports.forgotPassword = async (req, res) => {
   const { email } = req.body;
   try {
@@ -368,8 +368,7 @@ exports.postResetPassword = async (req, res) => {
 };
 
 
-// User Registration
-// User Registration Function
+// Update your registerUser function (replace the existing one)
 exports.registerUser = async (req, res) => {
   try {
     const { name, username, email, password, role, businessProfile, phoneNumber } = req.body;
@@ -425,18 +424,41 @@ exports.registerUser = async (req, res) => {
 
     const user = await User.create(userData);
 
-    // Send verification email only for regular users (not business-manager or admin)
-    if (role !== 'business-manager' && role !== 'admin') {
-      const verificationLink = `${process.env.FRONTEND_URL}/--/verify-email?token=${userData.verificationToken}`;
+    // Send appropriate emails based on role
+    if (role === 'business-manager') {
+      // Send business application confirmation email
+      try {
+        await sendBusinessApplicationEmail(user.email, businessProfile, name);
+        console.log(`✅ Business application email sent to ${user.email}`);
+      } catch (emailError) {
+        console.error('❌ Failed to send business application email:', emailError);
+        // Don't fail the registration if email fails, just log it
+      }
+    } else if (role !== 'admin') {
+      // Send verification email for regular users (not business-manager or admin)
+      const verificationLink = `${process.env.FRONTEND_URL}/verify-email?token=${userData.verificationToken}`;
       console.log('Generated Verification Link:', verificationLink);
-      await sendVerificationEmail(user.email, verificationLink);
+      
+      try {
+        await sendVerificationEmail(user.email, verificationLink);
+        console.log(`✅ Verification email sent to ${user.email}`);
+      } catch (emailError) {
+        console.error('❌ Failed to send verification email:', emailError);
+        // Don't fail the registration if email fails, just log it
+      }
     }
 
     // Send appropriate response based on role
     if (role === 'business-manager') {
-      // TODO: Send admin notification email here
       res.status(201).json({
-        message: 'Business application submitted successfully! Your application will be reviewed within 24-48 hours. You will receive an email notification once approved.',
+        message: 'Business application submitted successfully! We have sent a confirmation email with your application details. Your application will be reviewed within 24-48 hours and you will receive an email notification once approved.',
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          businessName: businessProfile.businessName
+        }
       });
     } else if (role === 'admin') {
       res.status(201).json({
@@ -452,9 +474,16 @@ exports.registerUser = async (req, res) => {
     } else {
       res.status(201).json({
         message: 'User registered successfully. Please check your email for verification link.',
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role
+        }
       });
     }
   } catch (error) {
+    console.error('Registration error:', error);
     res.status(500).json({ message: error.message });
   }
 };
