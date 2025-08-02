@@ -1,7 +1,3 @@
-
-
-// =====================================
-
 // Stay.js
 const mongoose = require('mongoose');
 const Service = require('./Service');
@@ -10,10 +6,15 @@ const StaySchema = new mongoose.Schema({
   type: { type: String, enum: ['Villa', 'Airbnb'], required: true },
   propertyType: { 
     type: String, 
-    enum: ['House', 'Apartment', 'Guesthouse'],
+    enum: ['House', 'Apartment', 'Guesthouse', 'Villa', 'Condo', 'Townhouse'],
     required: function() { return this.type === 'Airbnb'; } 
   },
   pricePerNight: { type: Number, required: true },
+  cleaningFee: { 
+    type: Number, 
+    default: 0,
+    min: 0
+  },
   maxGuests: { type: Number, required: true },
   bedrooms: { type: Number, required: true },
   bathrooms: { type: Number, required: true },
@@ -48,7 +49,16 @@ const StaySchema = new mongoose.Schema({
     indoorFireplace: { type: Boolean, default: false },
     smokingAllowed: { type: Boolean, default: false },
     smokeAlarm: { type: Boolean, default: false },
-    carbonMonoxideAlarm: { type: Boolean, default: false }
+    carbonMonoxideAlarm: { type: Boolean, default: false },
+    oceanView: { type: Boolean, default: false },
+    balcony: { type: Boolean, default: false },
+    linens: { type: Boolean, default: false },
+    highChair: { type: Boolean, default: false },
+    childSafe: { type: Boolean, default: false },
+    concierge: { type: Boolean, default: false },
+    housekeeping: { type: Boolean, default: false },
+    firstAidKit: { type: Boolean, default: false },
+    securitySystem: { type: Boolean, default: false }
   },
   
   bookingOptions: {
@@ -71,10 +81,10 @@ const StaySchema = new mongoose.Schema({
   stayImages: [{ type: String }],
   stayDescription: { type: String },
   addressDetails: {
-    address: { type: String, required: true },
-    city: { type: String, required: true },
+    address: { type: String },
+    city: { type: String },
     state: { type: String },
-    country: { type: String, required: true },
+    country: { type: String, default: 'Turks and Caicos' },
     zipCode: { type: String },
     coordinates: {
       latitude: { type: Number },

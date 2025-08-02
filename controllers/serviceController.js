@@ -10,18 +10,18 @@ const WellnessSpa = require('../models/WellnessSpa');
 // Model mapping to link service types to Mongoose models
 const modelMap = {
   stays: Stay,
-  transportation: Transportation,
-  dining: Dining,
+  transportations: Transportation,
+  dinings: Dining,
   activities: Activity,
-  shopping: Shopping,  // Add this line
-  wellnessspa: WellnessSpa
+  shoppings: Shopping,  // Add this line
+  wellnessspas: WellnessSpa
 };
 
 
 // Get all services
 exports.getAllServices = async (req, res) => {
   try {
-    const services = await Service.find().populate('host', 'name email');
+    const services = await Service.find().populate('vendor', 'name email');
     res.status(200).json(services);
   } catch (error) {
     console.error('Error retrieving services:', error);
@@ -38,7 +38,7 @@ exports.getAllServicesByType = async (req, res) => {
       return res.status(400).json({ error: 'Invalid service type' });
     }
 
-    const services = await modelMap[serviceType].find().populate('host', 'name email');
+    const services = await modelMap[serviceType].find().populate('vendor', 'name email');
     res.status(200).json(services);
   } catch (error) {
     console.error('Error fetching services by type:', error);
@@ -55,7 +55,7 @@ exports.getServiceById = async (req, res) => {
       return res.status(400).json({ error: 'Invalid service type' });
     }
 
-    const service = await modelMap[serviceType].findById(id).populate('host', 'name email');
+    const service = await modelMap[serviceType].findById(id).populate('vendor', 'name email');
     if (!service) {
       return res.status(404).json({ error: 'Service not found' });
     }
@@ -76,7 +76,7 @@ exports.getServiceByIdAndOption = async (req, res) => {
       return res.status(400).json({ error: 'Option ID only applicable for stays' });
     }
 
-    const stay = await Stay.findById(id).populate('host', 'name email');
+    const stay = await Stay.findById(id).populate('vendor', 'name email');
     if (!stay) {
       return res.status(404).json({ error: 'Stay not found' });
     }
@@ -99,28 +99,28 @@ exports.createService = async (req, res) => {
     const { serviceType, ...data } = req.body;
 
     let newService;
-    switch (serviceType) {
-      case 'activities':
-        newService = new Activity(data);
-        break;
-      case 'stays':
-        newService = new Stay(data);
-        break;
-      case 'dining':
-        newService = new Dining(data);
-        break;
-      case 'transportation':
-        newService = new Transportation(data);
-        break;
-      case 'shopping':
-        newService = new Shopping(data);
-        break;
-      case 'wellnessspa': // or use 'wellness&spa' if that's what you expect in the request
-        newService = new WellnessSpa(data);
-        break;
-      default:
-        return res.status(400).json({ message: 'Invalid service type' });
-    }
+switch (serviceType) {
+  case 'activities':
+    newService = new Activity(data);
+    break;
+  case 'stays':
+    newService = new Stay(data);
+    break;
+  case 'dinings':              // Updated
+    newService = new Dining(data);
+    break;
+  case 'transportations':      // Updated
+    newService = new Transportation(data);
+    break;
+  case 'shoppings':            // Updated
+    newService = new Shopping(data);
+    break;
+  case 'wellnessspas':         // Updated
+    newService = new WellnessSpa(data);
+    break;
+  default:
+    return res.status(400).json({ message: 'Invalid service type' });
+}
 
     await newService.save();
     res.status(201).json(newService);
@@ -133,7 +133,7 @@ exports.createService = async (req, res) => {
 exports.updateService = async (req, res) => {
   try {
     const { id } = req.params;
-    const updatedService = await Service.findByIdAndUpdate(id, req.body, { new: true }).populate('host', 'name email');
+    const updatedService = await Service.findByIdAndUpdate(id, req.body, { new: true }).populate('vendor', 'name email');
     if (!updatedService) {
       return res.status(404).json({ message: 'Service not found' });
     }
@@ -170,7 +170,7 @@ exports.getServicesByType = async (req, res) => {
       return res.status(400).json({ message: 'Invalid service type' });
     }
 
-    const services = await modelMap[type].find().populate('host', 'name email');
+    const services = await modelMap[type].find().populate('vendor', 'name email');
     res.status(200).json(services);
   } catch (error) {
     console.error('Error retrieving services by type:', error);
@@ -198,7 +198,7 @@ exports.getTransportationByCategory = async (req, res) => {
       return res.status(400).json({ message: 'Invalid transportation category' });
     }
 
-    const transportationServices = await Transportation.find({ category }).populate('host', 'name email');
+    const transportationServices = await Transportation.find({ category }).populate('vendor', 'name email');
 
     if (!transportationServices.length) {
       return res.status(404).json({ message: 'No transportation services found for this category' });

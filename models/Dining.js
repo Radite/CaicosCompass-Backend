@@ -1,7 +1,3 @@
-
-
-// =====================================
-
 // Dining.js
 const mongoose = require('mongoose');
 const Service = require('./Service');
@@ -11,12 +7,21 @@ const SideDishSchema = new mongoose.Schema({
   price: { type: Number, required: true }
 });
 
+const ImageSchema = new mongoose.Schema({
+  url: { type: String, required: true },
+  isMain: { type: Boolean, default: false }
+});
+
 const MenuItemSchema = new mongoose.Schema({
   name: { type: String, required: true },
   description: { type: String },
-  category: { type: String, enum: ['Appetizers', 'Main Courses', 'Desserts', 'Drinks'], required: true },
+  category: { 
+    type: String, 
+    enum: ['Appetizers', 'Main Courses', 'Desserts', 'Drinks', 'Sides'], 
+    required: true 
+  },
   price: { type: Number, required: true },
-  image: { type: String },
+  images: [ImageSchema], // Changed from single image to images array
   sides: [SideDishSchema],
 });
 
@@ -28,6 +33,12 @@ const OperatingHoursSchema = new mongoose.Schema({
   },
   openTime: { type: String, required: true },
   closeTime: { type: String, required: true }
+});
+
+const CustomClosureSchema = new mongoose.Schema({
+  date: { type: Date, required: true },
+  reason: { type: String },
+  isRecurring: { type: Boolean, default: false }
 });
 
 const DiningSchema = new mongoose.Schema({
@@ -42,8 +53,9 @@ const DiningSchema = new mongoose.Schema({
   }],
   priceRange: { type: String, enum: ['$', '$$', '$$$', '$$$$'], default: '$$' },
   menuItems: [MenuItemSchema],
-  operatingHours: [OperatingHoursSchema]
-  // Removed host field - vendor is inherited from Service base model
+  operatingHours: [OperatingHoursSchema],
+  customClosures: [CustomClosureSchema],
+  menuPdf: { type: String } // Optional PDF menu file path
 });
 
 module.exports = Service.discriminator('Dining', DiningSchema);
