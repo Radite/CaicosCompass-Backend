@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
+const { encrypt, decrypt, isEncrypted, maskAccountNumber, maskRoutingNumber } = require('../utils/encryption');
 
 const UserSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -24,6 +25,23 @@ const UserSchema = new mongoose.Schema({
 
   // NEW: Vendor/Business Profile
   businessProfile: {
+        // Business settings
+    settings: {
+      emailNotifications: { type: Boolean, default: true },
+      smsNotifications: { type: Boolean, default: true },
+      bookingAutoConfirm: { type: Boolean, default: false },
+      showPhoneNumber: { type: Boolean, default: true },
+      allowReviews: { type: Boolean, default: true }
+    },
+        // Social media links
+    socialMedia: {
+      facebook: { type: String },
+      instagram: { type: String },
+      twitter: { type: String },
+      website: { type: String }
+    },
+    logo: { type: String },
+    coverImage: { type: String },
     businessName: { type: String },
     businessType: { 
       type: String, 
@@ -335,4 +353,49 @@ UserSchema.methods.getVendorServices = async function() {
   return services;
 };
 
+// Pre-save hook for encrypting payment information
+UserSchema.pre('save', function(next) {
+  if (this.isModified('businessProfile.paymentInfo')) {
+    const paymentInfo = this.businessProfile.paymentInfo;
+    
+    if (paymentInfo.accountNumber && !isEncrypted(paymentInfo.accountNumber)) {
+      paymentInfo.accountNumber = encrypt(paymentInfo.accountNumber);
+    }
+    
+    if (paymentInfo.routingNumber && !isEncrypted(paymentInfo.routingNumber)) {
+      paymentInfo.routingNumber = encrypt(paymentInfo.routingNumber);
+    }
+  }
+  next();
+});
+
+UserSchema.methods.getDecryptedPaymentInfo = function() {
+  if (!this.paymentMethods || this.paymentMethods.length === 0) {
+    return [];
+  }
+  
+  return this.paymentMethods.map(method => ({
+    _id: method._id,
+    cardNumber: method.cardNumber ? decrypt(method.cardNumber) : null,
+    expiryDate: method.expiryDate ? decrypt(method.expiryDate) : null,
+    cardHolderName: method.cardHolderName ? decrypt(method.cardHolderName) : null
+  }));
+};
+
+UserSchema.methods.getMaskedPaymentInfo = function() {
+  if (!this.paymentMethods || this.paymentMethods.length === 0) {
+    return [];
+  }
+  
+  return this.paymentMethods.map(method => {
+    const decryptedCardNumber = method.cardNumber ? decrypt(method.cardNumber) : null;
+    
+    return {
+      _id: method._id,
+      cardNumber: decryptedCardNumber ? maskAccountNumber(decryptedCardNumber) : null,
+      expiryDate: method.expiryDate ? '**/**' : null,
+      cardHolderName: method.cardHolderName ? decrypt(method.cardHolderName) : null
+    };
+  });
+};
 module.exports = mongoose.model('User', UserSchema);

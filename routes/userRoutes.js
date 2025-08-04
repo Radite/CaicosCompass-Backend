@@ -138,6 +138,8 @@ router.put('/business-profile', authMiddleware.protect, authMiddleware.businessM
 
 // Change password
 router.put('/change-password', authMiddleware.protect, userController.changePassword);
-
+// Add these lines to routes/userRoutes.js (after line where change-password route is)
+router.post('/verify-password', authMiddleware.protect, userController.verifyPassword);
+router.post('/decrypted-payment-info', authMiddleware.protect, authMiddleware.businessManagerProtect, userController.getDecryptedPaymentInfo);
 module.exports = router;
 

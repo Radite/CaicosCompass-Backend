@@ -594,13 +594,25 @@ exports.refreshToken = async (req, res) => {
   }
 };
 
-// User Profile
+// Get user profile with masked payment info
 exports.getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-password');
-    res.json(user);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const userResponse = user.toObject();
+    
+    // Replace payment info with masked version for security
+    if (userResponse.businessProfile?.paymentInfo) {
+      userResponse.businessProfile.paymentInfo = user.getMaskedPaymentInfo();
+    }
+
+    res.json(userResponse);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Error fetching user profile:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -958,8 +970,49 @@ exports.updateUserRole = async (req, res) => {
   }
 };
 
+// Get business dashboard data
 exports.getBusinessDashboard = async (req, res) => {
-  res.status(200).json({ message: 'Welcome to the business dashboard' });
+  try {
+    const userId = req.user.id;
+    
+    const user = await User.findById(userId).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (user.role !== 'business-manager') {
+      return res.status(403).json({ message: 'Access denied. Business manager role required.' });
+    }
+
+    // Return dashboard data with masked payment info
+    const userResponse = user.toObject();
+    if (userResponse.businessProfile?.paymentInfo) {
+      userResponse.businessProfile.paymentInfo = user.getMaskedPaymentInfo();
+    }
+
+    const dashboardData = {
+      businessProfile: userResponse.businessProfile,
+      metrics: userResponse.businessProfile?.metrics || {
+        totalListings: 0,
+        totalBookings: 0,
+        totalRevenue: 0,
+        averageRating: 0,
+        responseRate: 0,
+        responseTime: 0
+      },
+      isApproved: userResponse.businessProfile?.isApproved || false,
+      approvalStatus: userResponse.businessProfile?.isApproved ? 'approved' : 'pending'
+    };
+
+    res.json(dashboardData);
+
+  } catch (error) {
+    console.error('Error fetching business dashboard:', error);
+    res.status(500).json({ 
+      message: 'Error fetching business dashboard',
+      error: error.message 
+    });
+  }
 };
 
 exports.manageListings = async (req, res) => {
@@ -1284,54 +1337,306 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// Update business profile
+// Enhanced updateBusinessProfile with encryption
 exports.updateBusinessProfile = async (req, res) => {
   try {
     const userId = req.user.id;
+    const profileData = req.body;
+
+    console.log('Updating business profile for user:', userId);
+
     const user = await User.findById(userId);
-    
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Update business profile
-    user.businessProfile = {
-      ...user.businessProfile,
-      ...req.body
-    };
+    if (user.role !== 'business-manager') {
+      return res.status(403).json({ message: 'Access denied. Business manager role required.' });
+    }
 
-    await user.save();
-    res.json({ message: 'Business profile updated successfully', user });
+    // Initialize business profile if it doesn't exist
+    if (!user.businessProfile) {
+      user.businessProfile = {};
+    }
+
+    // Update basic business information
+    if (profileData.businessName !== undefined) {
+      user.businessProfile.businessName = profileData.businessName;
+    }
+    
+    if (profileData.businessType !== undefined) {
+      user.businessProfile.businessType = profileData.businessType;
+    }
+    
+    if (profileData.description !== undefined) {
+      user.businessProfile.businessDescription = profileData.description;
+    }
+    
+    // Update images
+    if (profileData.logo !== undefined) {
+      user.businessProfile.logo = profileData.logo;
+    }
+    
+    if (profileData.coverImage !== undefined) {
+      user.businessProfile.coverImage = profileData.coverImage;
+    }
+
+    // Update contact information
+    if (profileData.contactInfo) {
+      if (!user.businessProfile.businessAddress) {
+        user.businessProfile.businessAddress = {};
+      }
+
+      if (profileData.contactInfo.phone !== undefined) {
+        user.businessProfile.businessPhone = profileData.contactInfo.phone;
+      }
+      
+      if (profileData.contactInfo.email !== undefined) {
+        user.email = profileData.contactInfo.email;
+      }
+      
+      if (profileData.contactInfo.website !== undefined) {
+        user.businessProfile.businessWebsite = profileData.contactInfo.website;
+      }
+      
+      if (profileData.contactInfo.address !== undefined) {
+        user.businessProfile.businessAddress.street = profileData.contactInfo.address;
+      }
+      
+      if (profileData.contactInfo.island !== undefined) {
+        user.businessProfile.businessAddress.island = profileData.contactInfo.island;
+      }
+    }
+
+    // Update business hours
+    if (profileData.businessHours) {
+      user.businessProfile.businessHours = {
+        ...user.businessProfile.businessHours,
+        ...profileData.businessHours
+      };
+    }
+
+    // Update payment information (will be encrypted automatically by pre-save hook)
+    if (profileData.paymentInfo) {
+      if (!user.businessProfile.paymentInfo) {
+        user.businessProfile.paymentInfo = {};
+      }
+
+      // Only update if the value is not masked (user is providing new info)
+      if (profileData.paymentInfo.bankName !== undefined) {
+        user.businessProfile.paymentInfo.bankName = profileData.paymentInfo.bankName;
+      }
+      
+      if (profileData.paymentInfo.accountHolderName !== undefined) {
+        user.businessProfile.paymentInfo.accountHolderName = profileData.paymentInfo.accountHolderName;
+      }
+      
+      // Only update account number if it's not masked
+      if (profileData.paymentInfo.accountNumber && 
+          !profileData.paymentInfo.accountNumber.startsWith('****')) {
+        user.businessProfile.paymentInfo.accountNumber = profileData.paymentInfo.accountNumber;
+      }
+      
+      // Only update routing number if it's not masked
+      if (profileData.paymentInfo.routingNumber && 
+          !profileData.paymentInfo.routingNumber.startsWith('****')) {
+        user.businessProfile.paymentInfo.routingNumber = profileData.paymentInfo.routingNumber;
+      }
+    }
+
+    // Update social media
+    if (profileData.socialMedia) {
+      user.businessProfile.socialMedia = {
+        ...user.businessProfile.socialMedia,
+        ...profileData.socialMedia
+      };
+    }
+
+    // Update settings
+    if (profileData.settings) {
+      user.businessProfile.settings = {
+        ...user.businessProfile.settings,
+        ...profileData.settings
+      };
+    }
+
+    // Mark the businessProfile as modified
+    user.markModified('businessProfile');
+
+    // Save the user (encryption happens in pre-save hook)
+    const updatedUser = await user.save();
+
+    // Return response with masked payment info
+    const responseUser = updatedUser.toObject();
+    if (responseUser.businessProfile?.paymentInfo) {
+      responseUser.businessProfile.paymentInfo = updatedUser.getMaskedPaymentInfo();
+    }
+
+    console.log('Business profile updated successfully');
+    res.json({
+      message: 'Business profile updated successfully',
+      user: {
+        _id: responseUser._id,
+        name: responseUser.name,
+        email: responseUser.email,
+        role: responseUser.role,
+        businessProfile: responseUser.businessProfile
+      }
+    });
+
   } catch (error) {
     console.error('Error updating business profile:', error);
-    res.status(500).json({ message: 'Error updating business profile' });
+    res.status(500).json({ 
+      message: 'Error updating business profile',
+      error: error.message 
+    });
   }
 };
 
-// Change password
+// Change password function
 exports.changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    const user = await User.findById(req.user.id);
+    const userId = req.user.id;
 
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ 
+        message: 'Current password and new password are required' 
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ 
+        message: 'New password must be at least 6 characters long' 
+      });
+    }
+
+    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Check current password
-    const isValidPassword = await bcrypt.compare(currentPassword, user.password);
-    if (!isValidPassword) {
+    if (!user.password) {
+      return res.status(400).json({ 
+        message: 'Cannot change password for OAuth accounts' 
+      });
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isCurrentPasswordValid) {
       return res.status(400).json({ message: 'Current password is incorrect' });
     }
 
-    // Hash new password
-    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedNewPassword;
+    // Update password (will be hashed by pre-save hook)
+    user.password = newPassword;
     await user.save();
 
+    console.log('Password changed successfully for user:', userId);
     res.json({ message: 'Password changed successfully' });
+
   } catch (error) {
     console.error('Error changing password:', error);
-    res.status(500).json({ message: 'Error changing password' });
+    res.status(500).json({ 
+      message: 'Error changing password',
+      error: error.message 
+    });
+  }
+};
+
+// Verify user password for sensitive operations
+exports.verifyPassword = async (req, res) => {
+  try {
+    const { password } = req.body;
+    
+    if (!password) {
+      return res.status(400).json({ 
+        valid: false, 
+        message: 'Password is required' 
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ 
+        valid: false, 
+        message: 'User not found' 
+      });
+    }
+
+    // Compare the provided password with the stored hash
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    
+    if (isValidPassword) {
+      res.json({ 
+        valid: true,
+        message: 'Password verified successfully'
+      });
+    } else {
+      res.status(400).json({ 
+        valid: false, 
+        message: 'Incorrect password' 
+      });
+    }
+  } catch (error) {
+    console.error('Error verifying password:', error);
+    res.status(500).json({ 
+      valid: false,
+      message: 'Error verifying password' 
+    });
+  }
+};
+
+// Get decrypted payment information (requires password verification)
+exports.getDecryptedPaymentInfo = async (req, res) => {
+  try {
+    const { password } = req.body;
+    
+    if (!password) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Password is required' 
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+
+    // Verify password first
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Incorrect password' 
+      });
+    }
+
+    // Get decrypted payment info
+    const paymentInfo = user.businessProfile?.paymentInfo || {};
+    
+    // Import decrypt function at the top of your file if not already imported
+    const { decrypt } = require('../utils/encryption');
+    
+    const decryptedPaymentInfo = {
+      bankName: paymentInfo.bankName || '',
+      accountHolderName: paymentInfo.accountHolderName || '',
+      accountNumber: paymentInfo.accountNumber ? decrypt(paymentInfo.accountNumber) : '',
+      routingNumber: paymentInfo.routingNumber ? decrypt(paymentInfo.routingNumber) : ''
+    };
+
+    res.json({ 
+      success: true,
+      paymentInfo: decryptedPaymentInfo
+    });
+  } catch (error) {
+    console.error('Error getting decrypted payment info:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error retrieving payment information' 
+    });
   }
 };
