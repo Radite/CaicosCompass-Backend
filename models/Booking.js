@@ -2,14 +2,28 @@ const mongoose = require('mongoose');
 
 const BookingSchema = new mongoose.Schema(
   {
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    user: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'User', 
+        required: false // User is no longer required
+    },
+    guestName: {
+        type: String,
+        trim: true
+    },
+    guestEmail: {
+        type: String,
+        trim: true,
+        lowercase: true
+    },
     participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     status: { type: String, enum: ['pending', 'confirmed', 'canceled'], default: 'pending' },
     category: { 
       type: String, 
-      enum: ['activity', 'stay', 'transportation'], 
+      enum: ['activity', 'stay', 'transportation', 'dining', 'spa'], 
       required: true, 
     },
+
     // References to the specific service type:
     activity: { 
       type: mongoose.Schema.Types.ObjectId, 
@@ -26,26 +40,66 @@ const BookingSchema = new mongoose.Schema(
       ref: 'Transportation', 
       required: function() { return this.category === 'transportation'; } 
     },
+    dining: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'Dining', 
+      required: function() { return this.category === 'dining'; } 
+    },
+    spa: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'WellnessSpa', 
+      required: function() { return this.category === 'spa'; } 
+    },
+
+    // Spa-specific fields
+    service: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      required: function() { return this.category === 'spa'; } 
+    },
+    serviceName: { 
+      type: String, 
+      required: function() { return this.category === 'spa'; } 
+    },
+
     // If the booking is for a specific option (for activities or transportation)
-    option: { type: mongoose.Schema.Types.ObjectId, ref: 'Option', required: false },
+option: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    // ref: 'Option', // <--- REMOVE THIS LINE
+    required: false 
+},
+
+    // Room for stays
+    room: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'Room', 
+      required: function() { return this.category === 'stay'; } 
+    },
     
     // Common booking fields:
     numOfPeople: { type: Number, required: true },
     quantity: { type: Number, min: 1, required: false },
     multiUser: { type: Boolean, default: false },
     
-    // For activities and transportation, we use these:
+    // For activities, transportation, dining, and spa, we use these:
     date: { 
       type: Date, 
       required: function() { 
-        return this.category === 'activity' || this.category === 'transportation'; 
+        return this.category === 'activity' || this.category === 'transportation' || 
+               this.category === 'dining' || this.category === 'spa'; 
       } 
     },
     time: { 
       type: String, 
       required: function() { 
-        return this.category === 'activity' || this.category === 'transportation'; 
+        return this.category === 'activity' || this.category === 'transportation' || 
+               this.category === 'dining' || this.category === 'spa'; 
       } 
+    },
+
+    // Time slot for spa appointments (and other services that need structured time)
+    timeSlot: {
+      startTime: String,
+      endTime: String
     },
     
     // For stay bookings:
@@ -67,20 +121,35 @@ const BookingSchema = new mongoose.Schema(
       type: String, 
       required: function() { return this.category === 'transportation'; } 
     },
+
+    // Contact Information
+    contactInfo: {
+      firstName: String,
+      lastName: String,
+      email: String,
+      phone: String
+    },
     
     // Payment Details
     paymentDetails: {
       totalAmount: { type: Number, required: true },
       amountPaid: { type: Number, default: 0 },
       remainingBalance: { type: Number, default: 0 },
+      paymentMethod: { type: String, enum: ['card', 'cash', 'transfer'] },
       payees: [
         {
           user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
           amount: { type: Number },
           status: { type: String, enum: ['pending', 'paid'], default: 'pending' },
           paymentMethod: { type: String, enum: ['card', 'cash', 'transfer'], required: true },
+          paidAt: { type: Date }
         },
       ],
+    },
+
+    // Requirements/Notes
+    requirements: {
+      specialNotes: String
     },
     
     // Cancellation Details
@@ -90,68 +159,34 @@ const BookingSchema = new mongoose.Schema(
       cancellationDate: { type: Date },
       refundAmount: { type: Number },
       refundStatus: { type: String, enum: ['pending', 'processed'], default: 'pending' },
+      reason: String
     },
-    
-    // Discounts
-    discount: {
-      code: { type: String },
-      amount: { type: Number, default: 0 },
-    },
-    
-    // Activity-Specific Requirements (if needed)
-    requirements: {
-      specialNotes: { type: String },
-      customFields: [
-        {
-          fieldName: { type: String },
-          value: { type: String },
-        },
-      ],
-    },
-    
-    // Notifications
-    notifications: [
-      {
-        type: { type: String, enum: ['booking_update', 'payment_reminder', 'cancellation'] },
-        message: { type: String },
-        sentAt: { type: Date, default: Date.now },
-        read: { type: Boolean, default: false },
-      },
-    ],
-    
-    // Audit Trail
-    audit: [
-      {
-        action: { type: String },
-        performedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-        timestamp: { type: Date, default: Date.now },
-        details: { type: String },
-      },
-    ],
-    
+
     // Feedback
     feedback: {
       rating: { type: Number, min: 1, max: 5 },
-      comment: { type: String },
-      submittedAt: { type: Date },
+      comment: String,
+      submittedAt: Date
     },
-    
-    // Waivers
-    waiver: {
-      isSigned: { type: Boolean, default: false },
-      signedAt: { type: Date },
-    },
+
+    // Notifications
+    notifications: [{
+      message: String,
+      type: { type: String, enum: ['info', 'warning', 'success', 'error'], default: 'info' },
+      read: { type: Boolean, default: false },
+      createdAt: { type: Date, default: Date.now }
+    }]
   },
-  { timestamps: true }
+  {
+    timestamps: true
+  }
 );
 
-// Pre-save hook to calculate remaining balance
-BookingSchema.pre('save', function (next) {
-  if (this.paymentDetails) {
-    this.paymentDetails.remainingBalance =
-      (this.paymentDetails.totalAmount || 0) - (this.paymentDetails.amountPaid || 0);
-  }
-  next();
+// Check to ensure either a user or guest email is present
+BookingSchema.pre('save', function(next) {
+    if (!this.user && !this.guestEmail) {
+        return next(new Error('A booking requires either a logged-in user or a guest email.'));
+    }
+    next();
 });
-
 module.exports = mongoose.model('Booking', BookingSchema);

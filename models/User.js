@@ -6,8 +6,55 @@ const UserSchema = new mongoose.Schema({
   name: { type: String, required: true },
   username: { type: String, required: true, unique: true },
   email: { type: String, required: true, unique: true },
-  phoneNumber: { type: String, default: null },
-  dateOfBirth: { type: Date, default: null },
+phoneNumber: { 
+    type: String, 
+    default: null,
+    validate: {
+      validator: function(v) {
+        if (!v) return true; // Allow null/empty
+        // Check if it's in format: +countrycode phonenumber
+        const phoneRegex = /^\+\d{1,4}\s.+$/;
+        if (!phoneRegex.test(v)) return false;
+        
+        // Extract actual number and validate length
+        const actualNumber = v.replace(/^\+\d{1,4}\s/, '').replace(/\D/g, '');
+        return actualNumber.length >= 7 && actualNumber.length <= 15;
+      },
+      message: 'Please provide a valid phone number with country code'
+    }
+  },
+  countryCode: { 
+    type: String, 
+    default: null,
+    validate: {
+      validator: function(v) {
+        if (!v) return true; // Allow null/empty
+        return /^\+\d{1,4}$/.test(v);
+      },
+      message: 'Please provide a valid country code'
+    }
+  },
+  dateOfBirth: { 
+    type: Date, 
+    default: null,
+    validate: {
+      validator: function(v) {
+        if (!v) return true; // Allow null/empty
+        
+        const today = new Date();
+        const birthDate = new Date(v);
+        const age = today.getFullYear() - birthDate.getFullYear();
+        const monthDiff = today.getMonth() - birthDate.getMonth();
+        
+        const actualAge = monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate()) 
+          ? age - 1 
+          : age;
+        
+        return actualAge >= 13 && actualAge <= 120;
+      },
+      message: 'You must be at least 13 years old and provide a valid birth date'
+    }
+  },
   password: { type: String },
   role: { 
     type: String, 

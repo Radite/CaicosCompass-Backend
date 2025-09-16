@@ -127,8 +127,9 @@ app.use((err, req, res, next) => {
 });
 
 // Start Server
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  const localIP = require('ip').address(); // Optional: shows LAN IP in logs
+  console.log(`Server running on http://${localIP}:${PORT}`);
   console.log(`Static files served from: ${uploadsDir}`);
-  console.log(`Test your images at: http://localhost:${PORT}/uploads/your-filename.jpg`);
+  console.log(`Test your images at: http://${localIP}:${PORT}/uploads/your-filename.jpg`);
 });

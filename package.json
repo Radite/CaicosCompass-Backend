@@ -21,6 +21,7 @@
     "express-validator": "^7.2.1",
     "google-auth-library": "^9.15.0",
     "helmet": "^8.0.0",
+    "ip": "^2.0.1",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.5",
     "multer": "^2.0.2",
