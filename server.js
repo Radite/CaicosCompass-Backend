@@ -31,6 +31,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+app.use('/api/payments', require('./routes/paymentRoutes'));
 
 app.use(express.json({ limit: '50mb' })); // Increase from default 100kb
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -75,12 +76,12 @@ app.use('/uploads', (req, res, next) => {
 });
 
 // Routes
+app.use('/api/vendors', require('./routes/vendorPublicRoutes')); // Note: 'vendors' plural
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/favorites-wishlist', require('./routes/favoriteWishlistRoutes'));
 app.use('/api/activities', require('./routes/activityRoutes'));
 app.use('/api/bookings', require('./routes/bookingRoutes'));
 app.use('/api/cart', require('./routes/cartRoutes'));
-app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/stays', require('./routes/stayRoutes'));
 app.use('/api/transportations', require('./routes/transportationRoutes'));
 app.use('/api/dinings', require('./routes/diningRoutes'));

@@ -72,7 +72,6 @@ option: {
     room: { 
       type: mongoose.Schema.Types.ObjectId, 
       ref: 'Room', 
-      required: function() { return this.category === 'stay'; } 
     },
     
     // Common booking fields:
@@ -128,6 +127,12 @@ option: {
       lastName: String,
       email: String,
       phone: String
+    },
+        paymentIntentId: {
+      type: String,
+      required: false,
+      unique: true,
+      sparse: true // Allows multiple null values but enforces uniqueness for non-null values
     },
     
     // Payment Details

@@ -12,39 +12,100 @@ exports.createBookingFromPayment = async (req, res) => {
             return res.status(200).json({ success: true, message: "Booking already exists.", data: existingBooking });
         }
         
-        // --- FIX: Manually build the booking object to match your schema ---
-        const newBookingData = {
+        // Base booking data - common to all booking types
+        let newBookingData = {
             user: bookingDetails.user,
             guestName: bookingDetails.guestName,
             guestEmail: bookingDetails.guestEmail,
             status: 'confirmed',
             category: bookingDetails.category,
-            activity: bookingDetails.activity,
-            option: bookingDetails.option,
             numOfPeople: bookingDetails.numOfPeople,
-            date: bookingDetails.date,
-            time: bookingDetails.time,
-            timeSlot: bookingDetails.timeSlot,
             contactInfo: bookingDetails.contactInfo,
-            paymentIntentId: paymentIntentId, // Link the booking to the payment
+            paymentIntentId: paymentIntentId,
             
-            // Create the nested paymentDetails object with the correct 'totalAmount' key
+            // Payment details
             paymentDetails: {
-                totalAmount: bookingDetails.totalPrice, // Map totalPrice to totalAmount
-                amountPaid: bookingDetails.totalPrice,  // The full amount was paid
+                totalAmount: bookingDetails.totalPrice,
+                amountPaid: bookingDetails.totalPrice,
                 paymentMethod: 'card',
             },
         };
 
+        // Add category-specific fields based on booking type
+        switch (bookingDetails.category) {
+            case 'spa':
+                newBookingData = {
+                    ...newBookingData,
+                    spa: bookingDetails.spa,
+                    service: bookingDetails.service,
+                    serviceName: bookingDetails.serviceName,
+                    date: bookingDetails.date,
+                    time: bookingDetails.time,
+                    timeSlot: bookingDetails.timeSlot
+                };
+                break;
+
+            case 'activity':
+                newBookingData = {
+                    ...newBookingData,
+                    activity: bookingDetails.activity,
+                    option: bookingDetails.option,
+                    date: bookingDetails.date,
+                    time: bookingDetails.time,
+                    timeSlot: bookingDetails.timeSlot
+                };
+                break;
+
+            case 'stay':
+                newBookingData = {
+                    ...newBookingData,
+                    stay: bookingDetails.stay,
+                    room: bookingDetails.room,
+                    startDate: bookingDetails.startDate,
+                    endDate: bookingDetails.endDate
+                };
+                break;
+
+            case 'transportation':
+                newBookingData = {
+                    ...newBookingData,
+                    transportation: bookingDetails.transportation,
+                    option: bookingDetails.option,
+                    date: bookingDetails.date,
+                    time: bookingDetails.time,
+                    pickupLocation: bookingDetails.pickupLocation,
+                    dropoffLocation: bookingDetails.dropoffLocation
+                };
+                break;
+
+            case 'dining':
+                newBookingData = {
+                    ...newBookingData,
+                    dining: bookingDetails.dining,
+                    date: bookingDetails.date,
+                    time: bookingDetails.time,
+                    timeSlot: bookingDetails.timeSlot
+                };
+                break;
+
+            default:
+                return res.status(400).json({ 
+                    success: false, 
+                    message: `Unsupported booking category: ${bookingDetails.category}` 
+                });
+        }
+
+        console.log('Creating booking with data:', JSON.stringify(newBookingData, null, 2));
+
         const newBooking = await Booking.create(newBookingData);
         
-        // You can add .populate() logic here if needed
-        // await newBooking.populate('user', 'firstName lastName');
+        console.log('Booking created successfully:', newBooking._id);
 
         res.status(201).json({ success: true, data: newBooking });
 
     } catch (error) {
         console.error('Error creating booking from payment:', error.message);
+        console.error('Full error:', error);
         res.status(500).json({ 
             success: false, 
             message: 'Error creating booking.', 
@@ -927,5 +988,42 @@ exports.finalizeBooking = async (req, res) => {
   } catch (error) {
     console.error('Error creating booking from payment:', error.message);
     res.status(500).json({ success: false, message: 'Error creating booking.', error: error.message });
+  }
+};
+
+exports.getBookingByPaymentIntent = async (req, res) => {
+  try {
+    console.log('[Server] Searching for booking with Payment Intent ID:', req.params.paymentIntentId);
+    
+    const booking = await Booking.findOne({ 
+      paymentIntentId: req.params.paymentIntentId 
+    }).populate([
+      { path: 'user', select: 'firstName lastName email phone' },
+      { path: 'participants', select: 'firstName lastName email phone' },
+      { path: 'activity', select: 'name description images location island category duration vendor' },
+      { path: 'stay', select: 'name description images location island amenities vendor' },
+      { path: 'transportation', select: 'name description vehicleType images capacity vendor' },
+      { path: 'dining', select: 'name description images location island cuisine vendor' },
+      { path: 'spa', select: 'name description images location island spaType servicesOffered vendor' },
+      { path: 'option', select: 'title description cost duration inclusions exclusions' }
+    ]);
+
+    if (!booking) {
+      console.log('[Server] Booking not found for Payment Intent ID:', req.params.paymentIntentId);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Booking not found.' 
+      });
+    }
+
+    console.log('[Server] Booking found:', booking._id);
+    res.status(200).json({ success: true, data: booking });
+  } catch (error) {
+    console.error('[Server] Error fetching booking by payment intent:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching booking.',
+      error: error.message 
+    });
   }
 };

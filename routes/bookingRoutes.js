@@ -2,11 +2,12 @@ const express = require('express');
 const router = express.Router();
 const bookingController = require('../controllers/bookingController');
 const authMiddleware = require('../middleware/authMiddleware');
-const { createBooking, finalizeBooking } = require('../controllers/bookingController');
+const { createBooking, getBookingByPaymentIntent } = require('../controllers/bookingController');
 
 // Basic CRUD Operations
 // Create a new booking (supports all service types: activity, stay, transportation, dining, spa)
 router.post('/', authMiddleware.protect, bookingController.createBooking);
+router.get('/by-payment-intent/:paymentIntentId', getBookingByPaymentIntent);
 
 // Get all bookings for authenticated user (with optional query filters)
 // Query params: ?status=confirmed&category=spa
@@ -73,8 +74,6 @@ router.post(
   authMiddleware.protect,
   bookingController.checkoutMultipleBookings
 );
-
-router.post('/finalize-booking', finalizeBooking);
 
 
 module.exports = router;
