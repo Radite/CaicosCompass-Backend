@@ -84,6 +84,7 @@ app.use('/api/bookings', require('./routes/bookingRoutes'));
 app.use('/api/cart', require('./routes/cartRoutes'));
 app.use('/api/stays', require('./routes/stayRoutes'));
 app.use('/api/transportations', require('./routes/transportationRoutes'));
+app.use('/api/vendor/transportation', require('./routes/vendorTransportationRoutes')); // NEW: Enhanced vendor transportation management
 app.use('/api/dinings', require('./routes/diningRoutes'));
 app.use('/api/services', require('./routes/serviceRoutes'));
 app.use('/api/reviews', require('./routes/reviewRoutes'));
@@ -115,6 +116,55 @@ app.get('/api/debug/uploads', (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// API Health Check Route with Transportation Features
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Backend API is running with Enhanced Transportation Management',
+    timestamp: new Date().toISOString(),
+    version: '2.0.0',
+    features: {
+      core: [
+        'User Management',
+        'Service Management', 
+        'Booking System',
+        'Payment Processing',
+        'File Uploads',
+        'Review System'
+      ],
+      transportation: [
+        'Vendor Fleet Management',
+        'Driver Management', 
+        'Dynamic Pricing Models',
+        'Route Management',
+        'Real-time Booking Management',
+        'Analytics & Reporting',
+        'Promotions & Discounts',
+        'Multi-category Support (Rentals, Taxis, Transfers)',
+        'Distance-based Pricing',
+        'Age-based Restrictions',
+        'Availability Management',
+        'Bulk Operations',
+        'Performance Tracking'
+      ]
+    },
+    endpoints: {
+      public: {
+        transportation: '/api/transportations',
+        services: '/api/services',
+        info: '/api/info'
+      },
+      vendor: {
+        transportation: '/api/vendor/transportation',
+        general: '/api/vendor',
+        public: '/api/vendors'
+      },
+      admin: '/api/admin'
+    }
+  });
+});
+
 
 // Home Route
 app.get('/', (req, res) => {
