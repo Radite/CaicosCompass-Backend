@@ -140,6 +140,161 @@ switch (essentialData.category) {
     }
 });
 
+// Add this route to your existing payment routes file
+router.post('/create-cart-payment-intent', async (req, res) => {
+  try {
+    const { items, user, guestName, guestEmail, contactInfo } = req.body;
+
+    // Validate cart items
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Cart is empty or invalid' });
+    }
+
+    // Validate contact info
+    if (!contactInfo || !contactInfo.email) {
+      return res.status(400).json({ error: 'Contact information is required' });
+    }
+
+    // Calculate total amount
+    const totalAmount = items.reduce((sum, item) => sum + item.totalPrice, 0);
+
+    // Create all bookings first
+    const bookingIds = [];
+    const bookingPromises = items.map(async (item) => {
+      let booking;
+
+      // Determine booking type and create appropriate booking
+      switch (item.serviceType.toLowerCase()) {
+        case 'activity':
+          booking = await createActivityBooking(item, user, contactInfo);
+          break;
+        case 'spa':
+        case 'wellnessspa':
+          booking = await createSpaBooking(item, user, contactInfo);
+          break;
+        case 'stay':
+          booking = await createStayBooking(item, user, contactInfo);
+          break;
+        default:
+          throw new Error(`Unknown service type: ${item.serviceType}`);
+      }
+
+      bookingIds.push(booking._id);
+      return booking;
+    });
+
+    // Wait for all bookings to be created
+    await Promise.all(bookingPromises);
+
+    // Create Stripe payment intent
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(totalAmount * 100), // Convert to cents
+      currency: 'usd',
+      automatic_payment_methods: {
+        enabled: true,
+      },
+      metadata: {
+        bookingIds: JSON.stringify(bookingIds),
+        bookingType: 'cart',
+        itemCount: items.length,
+        userId: user || 'guest',
+        guestName: guestName || '',
+        guestEmail: guestEmail || contactInfo.email,
+      },
+      receipt_email: contactInfo.email,
+    });
+
+    res.json({
+      clientSecret: paymentIntent.client_secret,
+      bookingIds: bookingIds,
+    });
+
+  } catch (error) {
+    console.error('Error creating cart payment intent:', error);
+    res.status(500).json({ error: error.message || 'Failed to create payment intent' });
+  }
+});
+
+// Helper function to create activity booking
+async function createActivityBooking(item, userId, contactInfo) {
+  const Booking = require('../models/Booking');
+  
+  const booking = new Booking({
+    user: userId || null,
+    activity: item.serviceId,
+    option: item.optionId || null,
+    date: item.selectedDate,
+    timeSlot: item.timeSlot,
+    numOfPeople: item.numPeople,
+    multiUser: false,
+    totalPrice: item.totalPrice,
+    paymentStatus: 'pending',
+    bookingStatus: 'pending',
+    guestName: userId ? null : contactInfo.firstName + ' ' + contactInfo.lastName,
+    guestEmail: userId ? null : contactInfo.email,
+  });
+
+  await booking.save();
+  return booking;
+}
+
+// Helper function to create spa booking
+async function createSpaBooking(item, userId, contactInfo) {
+  const Booking = require('../models/Booking');
+  
+  const booking = new Booking({
+    user: userId || null,
+    service: item.optionId || item.serviceId,
+    serviceName: item.serviceName,
+    spa: item.serviceId,
+    date: item.selectedDate,
+    timeSlot: item.timeSlot,
+    time: item.selectedTime || `${item.timeSlot.startTime} - ${item.timeSlot.endTime}`,
+    numOfPeople: item.numPeople,
+    totalPrice: item.totalPrice,
+    category: 'spa',
+    serviceType: 'Spa',
+    paymentStatus: 'pending',
+    bookingStatus: 'pending',
+    guestName: userId ? null : contactInfo.firstName + ' ' + contactInfo.lastName,
+    guestEmail: userId ? null : contactInfo.email,
+  });
+
+  await booking.save();
+  return booking;
+}
+
+// Helper function to create stay booking
+async function createStayBooking(item, userId, contactInfo) {
+  const Booking = require('../models/Booking');
+  
+  const nights = Math.ceil(
+    (new Date(item.checkOutDate) - new Date(item.selectedDate)) / (1000 * 60 * 60 * 24)
+  );
+
+  const booking = new Booking({
+    user: userId || null,
+    stay: item.serviceId,
+    stayName: item.serviceName,
+    startDate: item.selectedDate,
+    endDate: item.checkOutDate,
+    numOfPeople: item.numPeople,
+    nights: nights,
+    totalPrice: item.totalPrice,
+    category: 'stay',
+    serviceType: 'Stay',
+    paymentStatus: 'pending',
+    bookingStatus: 'pending',
+    guestName: userId ? null : contactInfo.firstName + ' ' + contactInfo.lastName,
+    guestEmail: userId ? null : contactInfo.email,
+  });
+
+  await booking.save();
+  return booking;
+}
+
+module.exports = router;
+
 // --- WEBHOOK ROUTE (with raw middleware) ---
 router.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
@@ -160,6 +315,79 @@ router.post('/stripe-webhook', express.raw({ type: 'application/json' }), async 
         
         try {
             console.log("Raw metadata:", paymentIntent.metadata);
+            
+            // ===== NEW: Check if this is a cart checkout =====
+            if (paymentIntent.metadata.bookingType === 'cart') {
+                console.log("Processing CART checkout");
+                
+                const bookingIds = JSON.parse(paymentIntent.metadata.bookingIds);
+                const itemCount = parseInt(paymentIntent.metadata.itemCount);
+                
+                console.log(`Updating ${itemCount} bookings:`, bookingIds);
+                
+                try {
+                    // Update all bookings to confirmed and paid
+                    const updateResult = await Booking.updateMany(
+                        { _id: { $in: bookingIds } },
+                        { 
+                            $set: {
+                                paymentStatus: 'paid',
+                                bookingStatus: 'confirmed',
+                                paymentIntentId: paymentIntent.id,
+                                paidAt: new Date()
+                            }
+                        }
+                    );
+
+                    console.log(`Successfully updated ${updateResult.modifiedCount} bookings`);
+
+                    // Optional: Send confirmation emails for each booking
+                    const bookings = await Booking.find({ _id: { $in: bookingIds } })
+                        .populate('user')
+                        .populate('activity')
+                        .populate('stay')
+                        .populate('spa');
+
+                    // You can add email logic here if needed
+                    for (const booking of bookings) {
+                        console.log(`Booking confirmed: ${booking._id} - ${booking.bookingStatus}`);
+                        // await sendBookingConfirmationEmail(booking); // Uncomment if you have email service
+                    }
+
+                    return res.status(200).json({ 
+                        received: true, 
+                        booking_status: 'confirmed',
+                        booking_type: 'cart',
+                        bookings_updated: updateResult.modifiedCount,
+                        booking_ids: bookingIds
+                    });
+
+                } catch (bookingError) {
+                    console.error('Error updating cart bookings:', bookingError);
+                    
+                    // Try to rollback - mark bookings as failed
+                    await Booking.updateMany(
+                        { _id: { $in: bookingIds } },
+                        { 
+                            $set: {
+                                paymentStatus: 'failed',
+                                bookingStatus: 'cancelled',
+                                paymentError: bookingError.message
+                            }
+                        }
+                    );
+
+                    return res.status(200).json({ 
+                        received: true, 
+                        booking_status: 'failed',
+                        booking_type: 'cart',
+                        error: bookingError.message
+                    });
+                }
+            }
+
+            // ===== EXISTING: Single item checkout logic =====
+            console.log("Processing SINGLE item checkout");
             
             let bookingDetails;
 
@@ -235,6 +463,7 @@ router.post('/stripe-webhook', express.raw({ type: 'application/json' }), async 
                 return res.status(200).json({ 
                     received: true, 
                     booking_status: 'failed',
+                    booking_type: 'single',
                     error: bookingError 
                 });
             }
@@ -243,6 +472,7 @@ router.post('/stripe-webhook', express.raw({ type: 'application/json' }), async 
             return res.status(200).json({ 
                 received: true, 
                 booking_status: 'created',
+                booking_type: 'single',
                 booking_id: bookingResult?.data?._id 
             });
 

@@ -1,15 +1,19 @@
-// cartRoutes.js
 const express = require('express');
 const router = express.Router();
 const cartController = require('../controllers/cartController');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// Routes for Cart Management
-router.post('/', authMiddleware.protect, cartController.addToCart); // Add item to cart
-router.get('/', authMiddleware.protect, cartController.getCart); // Get user's cart
-router.delete('/:id', authMiddleware.protect, cartController.removeFromCart); // Remove item from cart
-router.put('/:id', authMiddleware.protect, cartController.updateCartItem); // Update cart item (quantity, etc.)
-router.post('/checkout', authMiddleware.protect, cartController.checkout); // Checkout and create booking
+// All routes require authentication
+router.use(authMiddleware.protect);
+
+// Cart management routes
+router.get('/', cartController.getCart); // Get user's cart
+router.post('/', cartController.addToCart); // Add item to cart
+router.put('/:id', cartController.updateCartItem); // Update cart item
+router.delete('/:id', cartController.removeFromCart); // Remove item from cart
+router.delete('/', cartController.clearCart); // Clear entire cart
+
+// Checkout
+router.post('/checkout', cartController.checkout); // Create bookings from cart
 
 module.exports = router;
-

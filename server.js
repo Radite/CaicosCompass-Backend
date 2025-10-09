@@ -36,6 +36,7 @@ app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use(express.json({ limit: '50mb' })); // Increase from default 100kb
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+
 // Updated helmet configuration to allow images
 app.use(helmet({
   crossOriginResourcePolicy: { 
