@@ -128,7 +128,7 @@ router.post(
   userController.manageListings
 );
 
-
+router.get('/caicos-credits', authMiddleware.protect, userController.getCaicosCredits);
 // added for vendor dashboard error
 // Get user profile (needed by vendor dashboard)
 router.get('/profile', authMiddleware.protect, userController.getProfile);

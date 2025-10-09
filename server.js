@@ -92,6 +92,8 @@ app.use('/api/vendor', require('./routes/vendorRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/info', require('./routes/infoRoutes'));
 app.use('/api/forgot', require('./routes/forgotRoutes'));
+app.use('/api/tickets', require('./routes/ticketRoutes'));
+
 
 // FAQ Routes
 app.use('/api/faqs', require('./routes/faqRoutes'));

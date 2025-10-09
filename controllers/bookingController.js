@@ -2,104 +2,195 @@ const Booking = require('../models/Booking');
 
 
 // This function creates the booking using data verified after payment.
+// Complete fixed createBookingFromPayment function matching the ACTUAL Booking schema
+
 exports.createBookingFromPayment = async (req, res) => {
     try {
         const { bookingDetails, paymentIntentId } = req.body;
 
-        // Check if a booking with this paymentIntentId already exists to prevent duplicates
-        const existingBooking = await Booking.findOne({ paymentIntentId: paymentIntentId });
+        // Check if a booking with this paymentIntentId already exists
+        const existingBooking = await Booking.findOne({ 
+            'payment.transactionId': paymentIntentId 
+        });
         if (existingBooking) {
-            return res.status(200).json({ success: true, message: "Booking already exists.", data: existingBooking });
+            return res.status(200).json({ 
+                success: true, 
+                message: "Booking already exists.", 
+                data: existingBooking 
+            });
         }
+
+        // Fetch the service and vendor from the database
+        let serviceId = null;
+        let vendorId = null;
         
-        // Base booking data - common to all booking types
-        let newBookingData = {
-            user: bookingDetails.user,
-            guestName: bookingDetails.guestName,
-            guestEmail: bookingDetails.guestEmail,
-            status: 'confirmed',
-            category: bookingDetails.category,
-            numOfPeople: bookingDetails.numOfPeople,
-            contactInfo: bookingDetails.contactInfo,
-            paymentIntentId: paymentIntentId,
-            
-            // Payment details
-            paymentDetails: {
-                totalAmount: bookingDetails.totalPrice,
-                amountPaid: bookingDetails.totalPrice,
-                paymentMethod: 'card',
-            },
+        // Determine service ID based on category
+        if (bookingDetails.category === 'activity' && bookingDetails.activity) {
+            serviceId = bookingDetails.activity;
+        } else if (bookingDetails.category === 'spa' && bookingDetails.spa) {
+            serviceId = bookingDetails.spa;
+        } else if (bookingDetails.category === 'stay' && bookingDetails.stay) {
+            serviceId = bookingDetails.stay;
+        } else if (bookingDetails.category === 'transportation' && bookingDetails.transportation) {
+            serviceId = bookingDetails.transportation;
+        } else if (bookingDetails.category === 'dining' && bookingDetails.dining) {
+            serviceId = bookingDetails.dining;
+        }
+
+        if (!serviceId) {
+            throw new Error(`Could not find service ID for ${bookingDetails.category} booking`);
+        }
+
+        // Fetch service to get vendor
+        const Service = require('../models/Service');
+        const serviceDoc = await Service.findById(serviceId).lean();
+        
+        if (!serviceDoc) {
+            throw new Error(`Service not found: ${serviceId}`);
+        }
+
+        // Get vendor from service (try both 'vendor' and 'host' fields)
+        vendorId = serviceDoc.vendor || serviceDoc.host;
+        
+        if (!vendorId) {
+            throw new Error(`Vendor not found for service: ${serviceId}`);
+        }
+
+        // Map category to serviceType enum
+        const serviceTypeMapping = {
+            'activity': 'Activity',
+            'stay': 'Stay',
+            'transportation': 'Transportation',
+            'dining': 'Dining',
+            'spa': 'Activity' // Map spa to Activity if not in enum
         };
 
-        // Add category-specific fields based on booking type
-        switch (bookingDetails.category) {
-            case 'spa':
-                newBookingData = {
-                    ...newBookingData,
-                    spa: bookingDetails.spa,
-                    service: bookingDetails.service,
-                    serviceName: bookingDetails.serviceName,
-                    date: bookingDetails.date,
-                    time: bookingDetails.time,
-                    timeSlot: bookingDetails.timeSlot
+        // Create booking data matching the ACTUAL schema
+        const bookingData = {
+            // Required: customer, service, vendor
+            customer: bookingDetails.user, // Map user -> customer
+            service: serviceId,
+            vendor: vendorId,
+            
+            // Required: serviceType
+            serviceType: serviceTypeMapping[bookingDetails.category],
+            
+            // Optional: category (only for Transportation)
+            ...(bookingDetails.category === 'transportation' && {
+                category: bookingDetails.transportationCategory || 'Airport Transfer'
+            }),
+            
+            // Status
+            status: 'confirmed',
+            
+            // Required: Passengers
+            passengers: {
+                adults: bookingDetails.numOfPeople || 1,
+                children: 0,
+                infants: 0,
+                total: bookingDetails.numOfPeople || 1
+            },
+            
+            // Required: Pricing
+            pricing: {
+                basePrice: bookingDetails.basePrice || bookingDetails.totalPrice,
+                subtotal: bookingDetails.basePrice || bookingDetails.totalPrice,
+                totalAmount: bookingDetails.totalPrice
+            },
+            
+            // Required: Payment
+            payment: {
+                method: 'credit-card',
+                status: 'completed',
+                transactionId: paymentIntentId,
+                paidAt: new Date()
+            },
+            
+            // Transportation details (if applicable)
+            ...(bookingDetails.category === 'transportation' && {
+                transportationDetails: {
+                    tripType: 'one-way',
+                    pickup: {
+                        location: {
+                            name: bookingDetails.pickupLocation || 'Not specified',
+                            address: bookingDetails.pickupLocation || ''
+                        },
+                        date: bookingDetails.date ? new Date(bookingDetails.date) : new Date(),
+                        time: bookingDetails.time || ''
+                    },
+                    dropoff: {
+                        location: {
+                            name: bookingDetails.dropoffLocation || 'Not specified',
+                            address: bookingDetails.dropoffLocation || ''
+                        }
+                    }
+                }
+            }),
+            
+            // Scheduled date/time - convert "10:00 AM" to "10:00" format
+            scheduledDateTime: (() => {
+                if (!bookingDetails.date) return new Date();
+                
+                // Extract start time from "10:00 AM - 10:30 AM" format
+                let timeStr = bookingDetails.time?.split(' - ')[0] || '12:00 PM';
+                
+                // Convert 12-hour format to 24-hour format
+                const convertTo24Hour = (time12h) => {
+                    const [time, modifier] = time12h.split(' ');
+                    let [hours, minutes] = time.split(':');
+                    
+                    if (hours === '12') {
+                        hours = modifier === 'AM' ? '00' : '12';
+                    } else if (modifier === 'PM') {
+                        hours = String(parseInt(hours, 10) + 12);
+                    }
+                    
+                    return `${hours.padStart(2, '0')}:${minutes}`;
                 };
-                break;
+                
+                const time24 = convertTo24Hour(timeStr);
+                return new Date(`${bookingDetails.date}T${time24}:00`);
+            })(),
+            
+            // Preferences
+            preferences: {
+                specialRequests: bookingDetails.requirements || ''
+            },
+            
+            // Booking metadata
+            bookingSource: 'web',
+            bookingDate: new Date()
+        };
 
-            case 'activity':
-                newBookingData = {
-                    ...newBookingData,
-                    activity: bookingDetails.activity,
-                    option: bookingDetails.option,
-                    date: bookingDetails.date,
-                    time: bookingDetails.time,
-                    timeSlot: bookingDetails.timeSlot
-                };
-                break;
+        console.log('Creating booking with data:', JSON.stringify(bookingData, null, 2));
 
-            case 'stay':
-                newBookingData = {
-                    ...newBookingData,
-                    stay: bookingDetails.stay,
-                    room: bookingDetails.room,
-                    startDate: bookingDetails.startDate,
-                    endDate: bookingDetails.endDate
-                };
-                break;
-
-            case 'transportation':
-                newBookingData = {
-                    ...newBookingData,
-                    transportation: bookingDetails.transportation,
-                    option: bookingDetails.option,
-                    date: bookingDetails.date,
-                    time: bookingDetails.time,
-                    pickupLocation: bookingDetails.pickupLocation,
-                    dropoffLocation: bookingDetails.dropoffLocation
-                };
-                break;
-
-            case 'dining':
-                newBookingData = {
-                    ...newBookingData,
-                    dining: bookingDetails.dining,
-                    date: bookingDetails.date,
-                    time: bookingDetails.time,
-                    timeSlot: bookingDetails.timeSlot
-                };
-                break;
-
-            default:
-                return res.status(400).json({ 
-                    success: false, 
-                    message: `Unsupported booking category: ${bookingDetails.category}` 
-                });
-        }
-
-        console.log('Creating booking with data:', JSON.stringify(newBookingData, null, 2));
-
-        const newBooking = await Booking.create(newBookingData);
+        const newBooking = await Booking.create(bookingData);
         
         console.log('Booking created successfully:', newBooking._id);
+
+        // --- ADD CAICOS CREDITS: 1 point per dollar spent ---
+        try {
+            const User = require('../models/User');
+            const amountPaid = bookingDetails.totalPrice;
+            const creditsToAward = Math.floor(amountPaid); // 1 point per dollar, rounded down
+            
+            if (creditsToAward > 0 && bookingDetails.user) {
+                const updateResult = await User.findByIdAndUpdate(
+                    bookingDetails.user,
+                    { 
+                        $inc: { caicosCredits: creditsToAward } // FIXED: caicosCredits not loyaltyPoints
+                    },
+                    { new: true } // Return updated document
+                );
+                
+                console.log(`✅ Awarded ${creditsToAward} CaicosCredits to user ${bookingDetails.user} ($${amountPaid} spent)`);
+                console.log(`   New balance: ${updateResult?.caicosCredits || 'unknown'} credits`);
+            }
+        } catch (creditsError) {
+            // Log error but don't fail the booking
+            console.error('❌ Error awarding CaicosCredits:', creditsError.message);
+            console.error('Full error:', creditsError);
+        }
 
         res.status(201).json({ success: true, data: newBooking });
 
@@ -348,71 +439,86 @@ exports.cancelBooking = async (req, res) => {
 };
 
 // Get all bookings for the authenticated user - Updated to support all service types
+// Replace your getUserBookings function with this updated version
 exports.getUserBookings = async (req, res) => {
   try {
     const { status, category } = req.query;
     
-    // Build query
-    let query = { user: req.user.id };
+    // Build query using NEW schema fields
+    let query = { customer: req.user.id }; // customer instead of user
     if (status) query.status = status;
-    if (category) query.category = category;
+    if (category) {
+      // Map old category to new serviceType
+      const categoryMap = {
+        'activity': 'Activity',
+        'stay': 'Stay',
+        'transportation': 'Transportation',
+        'dining': 'Dining'
+      };
+      query.serviceType = categoryMap[category] || category;
+    }
 
     const bookings = await Booking.find(query)
-      .populate([
-        { path: 'user', select: 'firstName lastName email' },
-        { path: 'participants', select: 'firstName lastName email' },
-        { path: 'activity', select: 'name images location island category duration' },
-        { path: 'stay', select: 'name images location island amenities' },
-        { path: 'transportation', select: 'name vehicleType images capacity' },
-        { path: 'dining', select: 'name images location island cuisine priceRange' },
-        { path: 'spa', select: 'name images location island spaType servicesOffered' },
-        { path: 'option', select: 'title cost duration description' }
-      ])
+      .populate('customer', 'name email phoneNumber')
+      .populate('service', 'name description images location island')
+      .populate('vendor', 'name businessProfile.businessName')
       .sort({ createdAt: -1 });
 
-    // Add service name and enhance response for easier frontend handling
-    const enrichedBookings = bookings.map(booking => {
+    // Transform bookings to match frontend expectations
+    const transformedBookings = bookings.map(booking => {
       const bookingObj = booking.toObject();
       
-      // Add serviceName for consistent frontend handling
-      switch (booking.category) {
-        case 'activity':
-          bookingObj.serviceName = booking.activity?.name;
-          bookingObj.serviceImages = booking.activity?.images;
-          bookingObj.serviceLocation = booking.activity?.location;
-          break;
-        case 'stay':
-          bookingObj.serviceName = booking.stay?.name;
-          bookingObj.serviceImages = booking.stay?.images;
-          bookingObj.serviceLocation = booking.stay?.location;
-          break;
-        case 'transportation':
-          bookingObj.serviceName = booking.transportation?.name;
-          bookingObj.serviceImages = booking.transportation?.images;
-          bookingObj.vehicleType = booking.transportation?.vehicleType;
-          break;
-        case 'dining':
-          bookingObj.serviceName = booking.dining?.name;
-          bookingObj.serviceImages = booking.dining?.images;
-          bookingObj.serviceLocation = booking.dining?.location;
-          bookingObj.cuisine = booking.dining?.cuisine;
-          break;
-        case 'spa':
-          bookingObj.serviceName = bookingObj.serviceName || booking.spa?.name;
-          bookingObj.spaName = booking.spa?.name;
-          bookingObj.serviceImages = booking.spa?.images;
-          bookingObj.serviceLocation = booking.spa?.location;
-          bookingObj.spaType = booking.spa?.spaType;
-          break;
-      }
+      // Extract date and time from scheduledDateTime
+      const scheduledDate = booking.scheduledDateTime ? new Date(booking.scheduledDateTime) : null;
+      const dateStr = scheduledDate ? scheduledDate.toISOString().split('T')[0] : null;
       
-      return bookingObj;
+      // Format time from scheduledDateTime
+      let timeStr = null;
+      if (scheduledDate) {
+        const hours = scheduledDate.getHours();
+        const minutes = scheduledDate.getMinutes();
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const displayHours = hours % 12 || 12;
+        timeStr = `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`;
+      }
+
+      return {
+        _id: booking._id,
+        // Map serviceType -> category (lowercase)
+        category: booking.serviceType?.toLowerCase() || 'activity',
+        // Get service name from populated service
+        serviceName: booking.service?.name || 'Unnamed Service',
+        // Extract date and time
+        date: dateStr,
+        time: timeStr,
+        startDate: dateStr, // For stays
+        endDate: dateStr, // For stays (you may need additional logic)
+        // Map passengers -> numOfPeople
+        numOfPeople: booking.passengers?.total || 1,
+        status: booking.status,
+        // Map pickup/dropoff from transportationDetails if exists
+        pickupLocation: booking.transportationDetails?.pickup?.location?.name,
+        dropoffLocation: booking.transportationDetails?.dropoff?.location?.name,
+        // Map pricing -> paymentDetails
+        paymentDetails: {
+          totalAmount: booking.pricing?.totalAmount || 0,
+          amountPaid: booking.payment?.status === 'completed' ? booking.pricing?.totalAmount : 0,
+          remainingBalance: 0
+        },
+        // Map special requests
+        requirements: {
+          specialNotes: booking.preferences?.specialRequests || ''
+        },
+        createdAt: booking.createdAt,
+        // Include raw booking for reference
+        _raw: bookingObj
+      };
     });
 
     res.status(200).json({ 
       success: true, 
-      count: enrichedBookings.length,
-      data: enrichedBookings 
+      count: transformedBookings.length,
+      data: transformedBookings 
     });
   } catch (error) {
     console.error('Error fetching user bookings:', error.message);
@@ -995,17 +1101,13 @@ exports.getBookingByPaymentIntent = async (req, res) => {
   try {
     console.log('[Server] Searching for booking with Payment Intent ID:', req.params.paymentIntentId);
     
+    // FIX: Search by payment.transactionId instead of paymentIntentId
     const booking = await Booking.findOne({ 
-      paymentIntentId: req.params.paymentIntentId 
+      'payment.transactionId': req.params.paymentIntentId 
     }).populate([
-      { path: 'user', select: 'firstName lastName email phone' },
-      { path: 'participants', select: 'firstName lastName email phone' },
-      { path: 'activity', select: 'name description images location island category duration vendor' },
-      { path: 'stay', select: 'name description images location island amenities vendor' },
-      { path: 'transportation', select: 'name description vehicleType images capacity vendor' },
-      { path: 'dining', select: 'name description images location island cuisine vendor' },
-      { path: 'spa', select: 'name description images location island spaType servicesOffered vendor' },
-      { path: 'option', select: 'title description cost duration inclusions exclusions' }
+      { path: 'customer', select: 'name email phoneNumber' },
+      { path: 'service', select: 'name description images location island serviceType' },
+      { path: 'vendor', select: 'name email businessProfile.businessName businessProfile.businessPhone' }
     ]);
 
     if (!booking) {

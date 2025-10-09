@@ -1640,3 +1640,31 @@ exports.getDecryptedPaymentInfo = async (req, res) => {
     });
   }
 };
+
+// Get user's Caicos Credits
+exports.getCaicosCredits = async (req, res) => {
+  try {
+    const userId = req.user.id; // Assumes you have auth middleware that sets req.user
+    
+    const user = await User.findById(userId).select('caicosCredits');
+    
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      caicosCredits: user.caicosCredits || 0
+    });
+    
+  } catch (error) {
+    console.error('Error fetching Caicos Credits:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error while fetching credits' 
+    });
+  }
+};

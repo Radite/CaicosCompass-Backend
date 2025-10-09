@@ -319,7 +319,7 @@ fileType: {
   
   itinerary: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Booking' }],
   cart: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Cart' }],
-  loyaltyPoints: { type: Number, default: 0 },
+  caicosCredits: { type: Number, default: 0 },
   
   paymentMethods: [
     {

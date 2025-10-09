@@ -23,65 +23,66 @@ router.post('/create-payment-intent', express.json(), async (req, res) => {
                 : 'Guest';
 
         // --- Build minimal metadata that fits in 500 chars ---
-        const essentialData = {
-            category: bookingData.serviceType.toLowerCase(),
-            user: bookingData.user || null,
-            guestName: guestName,
-            guestEmail: bookingData.guestEmail || bookingData.contactInfo?.email,
-            numOfPeople: bookingData.numPeople || 1, // FIX: Map numPeople -> numOfPeople
-            totalPrice: bookingData.totalPrice,
-        };
+const essentialData = {
+    category: bookingData.serviceType.toLowerCase(),
+    user: bookingData.user || null,
+    guestName: guestName,
+    guestEmail: bookingData.guestEmail || bookingData.contactInfo?.email,
+    numOfPeople: bookingData.numPeople || 1,
+    totalPrice: bookingData.totalPrice,
+    basePrice: bookingData.basePrice || bookingData.price || bookingData.totalPrice, // ADD THIS
+};
 
-        // Add category-specific essential fields only
-        switch (essentialData.category) {
-            case 'activity':
-                essentialData.activity = bookingData.activityId || bookingData.activity;
-                essentialData.option = bookingData.optionId || bookingData.option;
-                essentialData.date = bookingData.date;
-                essentialData.time = bookingData.time;
-                // Simplified timeSlot (remove unnecessary fields)
-                if (bookingData.timeSlot) {
-                    essentialData.timeSlot = {
-                        startTime: bookingData.timeSlot.startTime,
-                        endTime: bookingData.timeSlot.endTime
-                    };
-                }
-                break;
-
-            case 'stay':
-                essentialData.stay = bookingData.stay;
-                essentialData.startDate = bookingData.startDate;
-                essentialData.endDate = bookingData.endDate;
-                break;
-
-            case 'spa':
-                essentialData.spa = bookingData.spaId || bookingData.spa;
-                essentialData.service = bookingData.serviceId || bookingData.service;
-                essentialData.serviceName = bookingData.serviceName;
-                essentialData.date = bookingData.date;
-                essentialData.time = bookingData.time;
-                break;
-
-            case 'dining':
-                essentialData.dining = bookingData.diningId || bookingData.dining;
-                essentialData.date = bookingData.date;
-                essentialData.time = bookingData.time;
-                break;
-
-            case 'transportation':
-                essentialData.transportation = bookingData.transportationId || bookingData.transportation;
-                essentialData.option = bookingData.optionId || bookingData.option;
-                essentialData.date = bookingData.date;
-                essentialData.time = bookingData.time;
-                essentialData.pickupLocation = bookingData.pickupLocation;
-                essentialData.dropoffLocation = bookingData.dropoffLocation;
-                break;
-
-            default:
-                return res.status(400).json({ 
-                    error: `Unsupported booking category: ${essentialData.category}. Supported categories: activity, stay, spa, dining, transportation` 
-                });
+// Add category-specific essential fields only
+switch (essentialData.category) {
+    case 'activity':
+        essentialData.activity = bookingData.activityId || bookingData.activity;
+        essentialData.option = bookingData.optionId || bookingData.option;
+        essentialData.date = bookingData.date;
+        essentialData.time = bookingData.time;
+        // Simplified timeSlot (remove unnecessary fields)
+        if (bookingData.timeSlot) {
+            essentialData.timeSlot = {
+                startTime: bookingData.timeSlot.startTime,
+                endTime: bookingData.timeSlot.endTime
+            };
         }
+        break;
+
+    case 'stay':
+        essentialData.stay = bookingData.stay || bookingData.stayId;
+        essentialData.startDate = bookingData.startDate;
+        essentialData.endDate = bookingData.endDate;
+        break;
+
+    case 'spa':
+        essentialData.spa = bookingData.spaId || bookingData.spa;
+        essentialData.service = bookingData.serviceId || bookingData.service;
+        essentialData.serviceName = bookingData.serviceName;
+        essentialData.date = bookingData.date;
+        essentialData.time = bookingData.time;
+        break;
+
+    case 'dining':
+        essentialData.dining = bookingData.diningId || bookingData.dining;
+        essentialData.date = bookingData.date;
+        essentialData.time = bookingData.time;
+        break;
+
+    case 'transportation':
+        essentialData.transportation = bookingData.transportationId || bookingData.transportation;
+        essentialData.option = bookingData.optionId || bookingData.option;
+        essentialData.date = bookingData.date;
+        essentialData.time = bookingData.time;
+        essentialData.pickupLocation = bookingData.pickupLocation;
+        essentialData.dropoffLocation = bookingData.dropoffLocation;
+        break;
+
+    default:
+        return res.status(400).json({ 
+            error: `Unsupported booking category: ${essentialData.category}. Supported categories: activity, stay, spa, dining, transportation` 
+        });
+}
 
         // Convert to JSON and check size
         const metadataJson = JSON.stringify(essentialData);
