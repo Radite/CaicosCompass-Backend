@@ -1099,10 +1099,14 @@ exports.finalizeBooking = async (req, res) => {
 
 exports.getBookingByPaymentIntent = async (req, res) => {
   try {
-    console.log('[Server] Searching for booking with Payment Intent ID:', req.params.paymentIntentId);
+    console.log('\n==========================================');
+    console.log('🔍 GET BOOKING BY PAYMENT INTENT');
+    console.log('==========================================');
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('Payment Intent ID:', req.params.paymentIntentId);
     
-    // FIX: Search by payment.transactionId instead of paymentIntentId
-    const booking = await Booking.findOne({ 
+    console.log('🔍 Searching for bookings...');
+    const bookings = await Booking.find({ 
       'payment.transactionId': req.params.paymentIntentId 
     }).populate([
       { path: 'customer', select: 'name email phoneNumber' },
@@ -1110,18 +1114,45 @@ exports.getBookingByPaymentIntent = async (req, res) => {
       { path: 'vendor', select: 'name email businessProfile.businessName businessProfile.businessPhone' }
     ]);
 
-    if (!booking) {
-      console.log('[Server] Booking not found for Payment Intent ID:', req.params.paymentIntentId);
+    console.log('Found bookings:', bookings.length);
+
+    if (!bookings || bookings.length === 0) {
+      console.log('❌ No bookings found');
+      console.log('==========================================\n');
       return res.status(404).json({ 
         success: false, 
         message: 'Booking not found.' 
       });
     }
 
-    console.log('[Server] Booking found:', booking._id);
-    res.status(200).json({ success: true, data: booking });
+    console.log('✅ Bookings found!');
+    bookings.forEach((booking, idx) => {
+      console.log(`   ${idx + 1}. ${booking.bookingId} - ${booking.serviceType} - ${booking.status}`);
+    });
+    
+    if (bookings.length === 1) {
+      console.log('📄 Returning single booking');
+      console.log('==========================================\n');
+      res.status(200).json({ 
+        success: true, 
+        data: bookings[0],
+        isCart: false
+      });
+    } else {
+      console.log('📦 Returning multiple bookings (cart)');
+      console.log('==========================================\n');
+      res.status(200).json({ 
+        success: true, 
+        data: bookings,
+        isCart: true,
+        count: bookings.length
+      });
+    }
   } catch (error) {
-    console.error('[Server] Error fetching booking by payment intent:', error);
+    console.error('\n❌❌❌ ERROR FETCHING BOOKING ❌❌❌');
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('==========================================\n');
     res.status(500).json({ 
       success: false, 
       message: 'Error fetching booking.',

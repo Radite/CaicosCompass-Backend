@@ -7,6 +7,7 @@ const Shopping = require('../models/Shopping');
 const mongoose = require('mongoose');
 
 // Add item to cart (Enhanced for all service types)
+// Add item to cart (Enhanced for all service types)
 exports.addToCart = async (req, res) => {
   try {
     console.log("Add to Cart - Request Body:", req.body);
@@ -18,26 +19,26 @@ exports.addToCart = async (req, res) => {
 
     const {
       serviceId,
-      serviceType, // 'stay', 'activity', 'transportation', 'dining', 'spa', 'shopping'
+      serviceType,
       category,
       optionId,
       roomId,
       quantity = 1,
       selectedDate,
-      startDate, // For stays
-      endDate, // For stays
+      startDate,
+      endDate,
       selectedTime,
       timeSlot,
       numPeople,
       multiUser = false,
       totalPrice,
-      priceBreakdown, // { basePrice, fees, taxes, discounts }
+      priceBreakdown,
       discount,
       notes,
-      pickupLocation, // For transportation
-      dropoffLocation, // For transportation
-      serviceName, // For spa services
-      productDetails // For shopping items
+      pickupLocation,
+      dropoffLocation,
+      serviceName,
+      productDetails
     } = req.body;
 
     // Validation
@@ -67,7 +68,7 @@ exports.addToCart = async (req, res) => {
       discount,
       notes,
       status: 'reserved',
-      reservedUntil: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
+      // ✅ REMOVED: reservedUntil - items now stay in cart forever
       audit: [{
         action: 'Added',
         timestamp: new Date(),
@@ -75,7 +76,7 @@ exports.addToCart = async (req, res) => {
       }]
     };
 
-    // Add service-specific fields
+    // Add service-specific fields (keep all your existing switch logic)
     switch (serviceType) {
       case 'stay':
         cartItem.startDate = startDate;
@@ -122,7 +123,7 @@ exports.addToCart = async (req, res) => {
         cartItem.selectedTime = selectedTime;
     }
 
-    // Check if similar item already exists (same service, date, time, option)
+    // Check if similar item already exists
     const existingItemIndex = cart.items.findIndex(item => {
       const sameService = item.service.toString() === serviceId;
       const sameDate = item.selectedDate?.toString() === new Date(cartItem.selectedDate || selectedDate).toString();
@@ -166,6 +167,59 @@ exports.addToCart = async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: 'Error adding item to cart', 
+      error: error.message 
+    });
+  }
+};
+
+// Get user's cart with populated service details
+exports.getCart = async (req, res) => {
+  try {
+    console.log("Fetching cart for user:", req.user.id);
+
+    const cart = await Cart.findOne({ user: req.user.id })
+      .populate({
+        path: 'items.service',
+        select: 'name location images mainImage pricePerNight basePrice category serviceType'
+      })
+      .populate({
+        path: 'items.option',
+        select: 'title description cost maxPeople'
+      })
+      .populate({
+        path: 'items.room',
+        select: 'type name pricePerNight'
+      });
+
+    if (!cart) {
+      return res.status(200).json({ 
+        success: true,
+        cart: { items: [], totalCartPrice: 0 } 
+      });
+    }
+
+    // ✅ REMOVED: Expiration filter - all items stay in cart
+    // Items are only removed when user explicitly removes them
+
+    // Recalculate total (in case of any data inconsistencies)
+    if (cart.items.length === 0) {
+      cart.totalCartPrice = 0;
+    } else {
+      cart.totalCartPrice = cart.items.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
+    }
+
+    await cart.save();
+
+    res.status(200).json({
+      success: true,
+      cart
+    });
+
+  } catch (error) {
+    console.error("Error fetching cart:", error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error retrieving cart', 
       error: error.message 
     });
   }
