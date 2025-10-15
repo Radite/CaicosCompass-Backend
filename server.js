@@ -77,6 +77,8 @@ app.use('/uploads', (req, res, next) => {
 });
 
 // Routes
+app.use('/api/admin/analytics', require('./routes/analyticsRoutes'));
+
 app.use('/api/vendors', require('./routes/vendorPublicRoutes')); // Note: 'vendors' plural
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/favorites-wishlist', require('./routes/favoriteWishlistRoutes'));

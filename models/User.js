@@ -445,4 +445,6 @@ UserSchema.methods.getMaskedPaymentInfo = function() {
     };
   });
 };
+
+
 module.exports = mongoose.model('User', UserSchema);

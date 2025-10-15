@@ -8,85 +8,102 @@ const AuditLog = require('../models/AuditLog');
 const { sendBusinessApprovalEmail } = require('./emailService');
 
 // Dashboard Statistics
+// Dashboard Stats
 exports.getDashboardStats = async (req, res) => {
   try {
+    console.log('📊 Fetching dashboard stats...'); // Debug
+
+    // Total users
+    const totalUsers = await User.countDocuments();
+    console.log('Total users:', totalUsers); // Debug
+
+    // Total bookings
+    const totalBookings = await Booking.countDocuments();
+    console.log('Total bookings:', totalBookings); // Debug
+
+    // Active vendors - using accountStatus instead of isActive
+    const activeVendors = await User.countDocuments({ 
+      role: 'business-manager', 
+      'businessProfile.isApproved': true,
+      accountStatus: 'active' // Changed from isActive
+    });
+    console.log('Active vendors:', activeVendors); // Debug
+
+    // Pending approvals
+    const pendingApprovals = await User.countDocuments({ 
+      role: 'business-manager', 
+      'businessProfile.isApproved': false 
+    });
+    console.log('Pending approvals:', pendingApprovals); // Debug
+
+    // Total revenue with error handling
+    let totalRevenue = 0;
+    try {
+      const revenueResult = await Booking.aggregate([
+        { $match: { status: 'confirmed' } },
+        { $group: { _id: null, total: { $sum: '$paymentDetails.totalAmount' } } }
+      ]);
+      totalRevenue = revenueResult[0]?.total || 0;
+      console.log('Total revenue:', totalRevenue); // Debug
+    } catch (revenueError) {
+      console.error('Error calculating revenue:', revenueError);
+    }
+
+    // Recent users - using accountStatus
+    const recentUsers = await User.find({ accountStatus: 'active' })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select('name email role createdAt')
+      .lean(); // Use lean for better performance
+    console.log('Recent users count:', recentUsers.length); // Debug
+
+    // Recent bookings with better error handling
+    let recentBookings = [];
+    try {
+      recentBookings = await Booking.find()
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .populate('user', 'name email')
+        .populate('service', 'name')
+        .lean();
+      
+      // Transform serviceName
+      recentBookings = recentBookings.map(booking => ({
+        ...booking,
+        serviceName: booking.service?.name || booking.serviceName || 'N/A'
+      }));
+      console.log('Recent bookings count:', recentBookings.length); // Debug
+    } catch (bookingError) {
+      console.error('Error fetching recent bookings:', bookingError);
+    }
+
+    // Total listings
+    let totalListings = 0;
+    try {
+      totalListings = await Service.countDocuments();
+      console.log('Total listings:', totalListings); // Debug
+    } catch (listingError) {
+      console.error('Error counting listings:', listingError);
+    }
+
+    // Calculate user growth rate
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const newUsersLastMonth = await User.countDocuments({ 
+      createdAt: { $gte: thirtyDaysAgo } 
+    });
+    const userGrowthRate = totalUsers > 0 ? ((newUsersLastMonth / totalUsers) * 100).toFixed(2) : 0;
+    console.log('User growth rate:', userGrowthRate); // Debug
 
-    const sixtyDaysAgo = new Date();
-    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-
-    // Get total counts
-    const [
-      totalUsers,
-      totalBookings,
-      recentUsers,
-      recentBookings,
-      currentMonthUsers,
-      previousMonthUsers,
-      currentMonthBookings,
-      previousMonthBookings
-    ] = await Promise.all([
-      User.countDocuments(),
-      Booking.countDocuments(),
-      User.find().sort({ createdAt: -1 }).limit(10).select('name email role createdAt'),
-      Booking.find()
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .populate('user', 'name email')
-        .select('serviceName status paymentDetails createdAt user'),
-      User.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
-      User.countDocuments({ createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo } }),
-      Booking.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
-      Booking.countDocuments({ createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo } })
-    ]);
-
-    // Calculate revenue
-    const revenueBookings = await Booking.find({ status: 'confirmed' });
-    const totalRevenue = revenueBookings.reduce((sum, booking) => 
-      sum + (booking.paymentDetails?.totalAmount || 0), 0
-    );
-
-    // Calculate growth rate
-    const userGrowthRate = previousMonthUsers > 0 
-      ? ((currentMonthUsers - previousMonthUsers) / previousMonthUsers) * 100 
-      : 0;
-
-    // Platform metrics
-    const [
-      activeVendors,
-      pendingApprovals,
-      totalListings,
-      totalStays,
-      totalDinings,
-      totalActivities,
-      totalTransportations
-    ] = await Promise.all([
-      User.countDocuments({ role: 'business-manager', isActive: true }),
-      User.countDocuments({ 
-        role: 'business-manager', 
-        'businessProfile.isApproved': false 
-      }),
-      Promise.all([
-        Stay.countDocuments(),
-        Dining.countDocuments(),
-        Activity.countDocuments(),
-        Transportation.countDocuments()
-      ]).then(counts => counts.reduce((sum, count) => sum + count, 0)),
-      Stay.countDocuments(),
-      Dining.countDocuments(),
-      Activity.countDocuments(),
-      Transportation.countDocuments()
-    ]);
-
-    // Calculate conversion rate (bookings to total users)
+    // Calculate conversion rate
     const conversionRate = totalUsers > 0 ? (totalBookings / totalUsers) * 100 : 0;
+    console.log('Conversion rate:', conversionRate); // Debug
 
     const stats = {
       totalUsers,
       totalBookings,
       totalRevenue,
-      growthRate: userGrowthRate,
+      growthRate: parseFloat(userGrowthRate),
       recentUsers,
       recentBookings,
       platformMetrics: {
@@ -97,16 +114,30 @@ exports.getDashboardStats = async (req, res) => {
       }
     };
 
-    // Log this action
-    await logAuditAction(req.user.id, 'dashboard_view', 'admin_dashboard', {
-      timestamp: new Date(),
-      stats: { totalUsers, totalBookings, totalRevenue }
-    }, req);
+    console.log('✅ Dashboard stats compiled successfully'); // Debug
+
+    // Try to log audit action, but don't fail if it errors
+    try {
+      await logAuditAction(req.user.id, 'dashboard_view', 'admin_dashboard', {
+        timestamp: new Date(),
+        stats: { totalUsers, totalBookings, totalRevenue }
+      }, req);
+    } catch (auditError) {
+      console.error('Error logging audit action:', auditError);
+      // Don't fail the request if audit logging fails
+    }
 
     res.json(stats);
   } catch (error) {
-    console.error('Error fetching dashboard stats:', error);
-    res.status(500).json({ message: 'Error fetching dashboard statistics' });
+    console.error('❌ Error fetching dashboard stats:', error);
+    console.error('Error stack:', error.stack);
+    
+    // Return a more detailed error for debugging
+    res.status(500).json({ 
+      message: 'Error fetching dashboard statistics',
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 };
 
@@ -122,8 +153,9 @@ exports.getUsers = async (req, res) => {
       query.role = role;
     }
     
+    // Map status filter to accountStatus
     if (status && status !== 'all') {
-      query.isActive = status === 'active';
+      query.accountStatus = status === 'active' ? 'active' : 'deactivated';
     }
     
     if (search) {
@@ -133,28 +165,31 @@ exports.getUsers = async (req, res) => {
       ];
     }
 
-    console.log('Query filters:', query); // Debug log
-
     const users = await User.find(query)
-      .select('name email role isActive loyaltyPoints createdAt lastLoginAt businessProfile')
+      .select('name email role accountStatus loyaltyPoints createdAt lastLoginAt businessProfile phoneNumber')
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
     const totalUsers = await User.countDocuments(query);
 
-    console.log(`Found ${users.length} users out of ${totalUsers} total`); // Debug log
-    console.log('First user:', users[0]); // Debug log
+    // Transform accountStatus to isActive for frontend
+    const transformedUsers = users.map(user => {
+      const userObj = user.toObject();
+      return {
+        ...userObj,
+        isActive: userObj.accountStatus === 'active'
+      };
+    });
 
     await logAuditAction(req.user.id, 'users_view', 'user_management', {
       filters: { role, status, search },
       totalResults: totalUsers
     }, req);
 
-    // Ensure consistent response structure
     res.json({
       success: true,
-      users: users, // Make sure this is an array
+      users: transformedUsers,
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalUsers / limit),
@@ -168,7 +203,7 @@ exports.getUsers = async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: 'Error fetching users',
-      users: [] // Return empty array on error
+      users: []
     });
   }
 };
@@ -222,19 +257,57 @@ exports.updateUser = async (req, res) => {
     const { userId } = req.params;
     const updates = req.body;
 
-    // Prevent updating sensitive fields
+    console.log('Updating user:', userId, 'with updates:', updates); // Debug
+
+    // Prevent updating password through this endpoint
     delete updates.password;
-    delete updates.role; // Use separate endpoint for role updates
 
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { $set: updates, updatedAt: new Date() },
-      { new: true, runValidators: true }
-    ).select('-password');
-
+    // Find user first
+    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
+
+    // Update basic fields
+    if (updates.name) user.name = updates.name;
+    if (updates.email) user.email = updates.email;
+    if (updates.phoneNumber !== undefined) user.phoneNumber = updates.phoneNumber;
+    if (updates.loyaltyPoints !== undefined) user.loyaltyPoints = updates.loyaltyPoints;
+    
+    // Handle isActive from frontend -> accountStatus in backend
+    if (updates.isActive !== undefined) {
+      user.accountStatus = updates.isActive ? 'active' : 'deactivated';
+      if (!updates.isActive) {
+        user.deactivatedAt = new Date();
+      } else {
+        user.deactivatedAt = null;
+      }
+    }
+
+    // Update business profile if provided and user is business-manager
+    if (updates.businessProfile && user.role === 'business-manager') {
+      if (!user.businessProfile) {
+        user.businessProfile = {};
+      }
+      
+      if (updates.businessProfile.businessName !== undefined) {
+        user.businessProfile.businessName = updates.businessProfile.businessName;
+      }
+      if (updates.businessProfile.businessType !== undefined) {
+        user.businessProfile.businessType = updates.businessProfile.businessType;
+      }
+      if (updates.businessProfile.isApproved !== undefined) {
+        user.businessProfile.isApproved = updates.businessProfile.isApproved;
+        if (updates.businessProfile.isApproved) {
+          user.businessProfile.approvalDate = new Date();
+        }
+      }
+    }
+
+    user.updatedAt = new Date();
+    await user.save();
+
+    console.log('User updated successfully'); // Debug
 
     await logAuditAction(req.user.id, 'user_update', 'user_management', {
       targetUserId: userId,
@@ -242,10 +315,23 @@ exports.updateUser = async (req, res) => {
       updates
     }, req);
 
-    res.json({ message: 'User updated successfully', user });
+    // Return with isActive computed
+    const userObj = user.toObject();
+    res.json({ 
+      message: 'User updated successfully', 
+      user: { 
+        ...userObj, 
+        password: undefined,
+        isActive: user.accountStatus === 'active'
+      }
+    });
   } catch (error) {
     console.error('Error updating user:', error);
-    res.status(500).json({ message: 'Error updating user' });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Error updating user',
+      error: error.message
+    });
   }
 };
 
@@ -253,28 +339,53 @@ exports.toggleUserStatus = async (req, res) => {
   try {
     const { userId } = req.params;
     
+    console.log('Toggling status for user:', userId); // Debug log
+    
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    user.isActive = !user.isActive;
+    console.log('Current accountStatus:', user.accountStatus); // Debug log
+
+    // Toggle accountStatus (not isActive)
+    user.accountStatus = user.accountStatus === 'active' ? 'deactivated' : 'active';
+    
+    if (user.accountStatus === 'deactivated') {
+      user.deactivatedAt = new Date();
+    } else {
+      user.deactivatedAt = null;
+    }
+    
     user.updatedAt = new Date();
+    
     await user.save();
+
+    console.log('New accountStatus:', user.accountStatus); // Debug log
 
     await logAuditAction(req.user.id, 'user_status_toggle', 'user_management', {
       targetUserId: userId,
       targetUserEmail: user.email,
-      newStatus: user.isActive ? 'active' : 'inactive'
+      newStatus: user.accountStatus
     }, req);
 
+    // Return user with isActive computed for frontend
+    const userObj = user.toObject();
     res.json({ 
-      message: `User ${user.isActive ? 'activated' : 'deactivated'} successfully`,
-      user: { ...user.toObject(), password: undefined }
+      message: `User ${user.accountStatus === 'active' ? 'activated' : 'deactivated'} successfully`,
+      user: { 
+        ...userObj, 
+        password: undefined,
+        isActive: user.accountStatus === 'active' // Compute isActive for frontend
+      }
     });
   } catch (error) {
     console.error('Error toggling user status:', error);
-    res.status(500).json({ message: 'Error updating user status' });
+    console.error('Error stack:', error.stack); // More detailed error
+    res.status(500).json({ 
+      message: 'Error updating user status',
+      error: error.message // Send error message for debugging
+    });
   }
 };
 

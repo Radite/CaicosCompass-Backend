@@ -1,5 +1,9 @@
 const Booking = require('../models/Booking');
-
+const { 
+  afterBookingCreate, 
+  afterBookingUpdate, 
+  afterBookingDelete 
+} = require('../middleware/analyticsHooks');
 
 // This function creates the booking using data verified after payment.
 // Complete fixed createBookingFromPayment function matching the ACTUAL Booking schema
@@ -167,6 +171,11 @@ exports.createBookingFromPayment = async (req, res) => {
         const newBooking = await Booking.create(bookingData);
         
         console.log('Booking created successfully:', newBooking._id);
+                await newBooking.populate([
+            { path: 'vendor', select: 'businessProfile.businessName' },
+            { path: 'service' }
+        ]);
+        afterBookingCreate(newBooking);
 
         // --- ADD CAICOS CREDITS: 1 point per dollar spent ---
         try {
@@ -341,6 +350,7 @@ exports.createBooking = async (req, res) => {
       { path: 'option', select: 'title cost duration' }
     ]);
 
+    afterBookingCreate(newBooking);
     res.status(201).json({ success: true, data: newBooking });
   } catch (error) {
     console.error('Error creating booking:', error.message);
@@ -368,12 +378,15 @@ exports.updateBooking = async (req, res) => {
       });
     }
 
+    const oldBooking = booking.toObject();
     const updatedBooking = await Booking.findByIdAndUpdate(
       req.params.id, 
       req.body, 
       { new: true, runValidators: true }
     ).populate([
       { path: 'user', select: 'firstName lastName email' },
+      { path: 'vendor', select: 'businessProfile.businessName' }, // ✨ ADD THIS
+      { path: 'service' }, // ✨ ADD THIS
       { path: 'activity', select: 'name images location' },
       { path: 'stay', select: 'name images location' },
       { path: 'transportation', select: 'name vehicleType' },
@@ -414,6 +427,8 @@ exports.cancelBooking = async (req, res) => {
       });
     }
 
+        const oldBooking = booking.toObject();
+
     booking.status = 'canceled';
     booking.cancellation = {
       isCanceled: true,
@@ -423,6 +438,8 @@ exports.cancelBooking = async (req, res) => {
     };
 
     await booking.save();
+        afterBookingUpdate(oldBooking, booking);
+
     res.status(200).json({ 
       success: true, 
       message: 'Booking canceled successfully.', 
@@ -575,11 +592,18 @@ exports.getBookingById = async (req, res) => {
 // Admin cancel a booking
 exports.adminCancelBooking = async (req, res) => {
   try {
-    const booking = await Booking.findById(req.params.id);
+    const booking = await Booking.findById(req.params.id)
+      .populate([
+        { path: 'vendor', select: 'businessProfile.businessName' },
+        { path: 'service' }
+      ]);
+      
     if (!booking) {
       return res.status(404).json({ success: false, message: 'Booking not found.' });
     }
 
+    // ✨ ADD THIS LINE
+    const oldBooking = booking.toObject();
     booking.status = 'canceled';
     booking.cancellation = {
       isCanceled: true,
@@ -591,6 +615,8 @@ exports.adminCancelBooking = async (req, res) => {
     };
 
     await booking.save();
+        // ✨ ADD THIS LINE
+    afterBookingUpdate(oldBooking, booking);
     res.status(200).json({ 
       success: true, 
       message: 'Booking canceled by admin.', 
@@ -609,11 +635,18 @@ exports.adminCancelBooking = async (req, res) => {
 // Business Manager cancel a booking
 exports.managerCancelBooking = async (req, res) => {
   try {
-    const booking = await Booking.findById(req.params.id);
+    const booking = await Booking.findById(req.params.id)
+      .populate([
+        { path: 'vendor', select: 'businessProfile.businessName' },
+        { path: 'service' }
+      ]);
+      
     if (!booking) {
       return res.status(404).json({ success: false, message: 'Booking not found.' });
     }
 
+    // ✨ ADD THIS LINE
+    const oldBooking = booking.toObject();
     booking.status = 'canceled';
     booking.cancellation = {
       isCanceled: true,
@@ -625,6 +658,8 @@ exports.managerCancelBooking = async (req, res) => {
     };
 
     await booking.save();
+        // ✨ ADD THIS LINE
+    afterBookingUpdate(oldBooking, booking);
     res.status(200).json({ 
       success: true, 
       message: 'Booking canceled by business manager.', 
@@ -956,8 +991,17 @@ exports.checkoutMultipleBookings = async (req, res) => {
             specialNotes: cartItem.notes || ''
           }
         });
+        // ✨ ADD THESE LINES
+        await newBooking.populate([
+          { path: 'vendor', select: 'businessProfile.businessName' },
+          { path: 'service' }
+        ]);
+        afterBookingCreate(newBooking);
+
+        return newBooking;
       })
     );
+
 
     // Clear the cart after checkout
     userCart.items = [];
@@ -1088,6 +1132,12 @@ exports.finalizeBooking = async (req, res) => {
     const newBooking = await Booking.create(bookingData);
     
     console.log('--- BOOKING CREATED SUCCESSFULLY ---', newBooking._id);
+        // ✨ ADD THESE LINES
+    await newBooking.populate([
+      { path: 'vendor', select: 'businessProfile.businessName' },
+      { path: 'service' }
+    ]);
+    afterBookingCreate(newBooking);
     
     res.status(201).json({ success: true, data: newBooking });
 
