@@ -45,14 +45,14 @@ const BookingSchema = new mongoose.Schema({
   // Booking status and timeline
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'in-progress', 'completed', 'cancelled', 'no-show'],
+    enum: ['pending', 'confirmed', 'in-progress', 'completed', 'cancelled', 'no-show', 'reviewed'],
     default: 'pending'
   },
   
   statusHistory: [{
     status: {
       type: String,
-      enum: ['pending', 'confirmed', 'in-progress', 'completed', 'cancelled', 'no-show']
+      enum: ['pending', 'confirmed', 'in-progress', 'completed', 'cancelled', 'no-show', 'reviewed']
     },
     timestamp: { type: Date, default: Date.now },
     reason: String,

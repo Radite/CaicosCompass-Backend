@@ -1,372 +1,367 @@
-// models/Review.js
+// models/Review.js - Enhanced with automatic Service analytics updates
 const mongoose = require('mongoose');
 
 const ReviewSchema = new mongoose.Schema(
   {
-    user: { 
-      type: mongoose.Schema.Types.ObjectId, 
-      ref: 'User', 
-      required: true 
+    // User who created the review
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true
     },
-    // Reference to the original booking that allows this review
+
+    // Booking that allows this review (must have completed booking)
     booking: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Booking',
-      required: true
+      required: true,
+      index: true
     },
-    // Reference to the service being reviewed
-    service: { 
-      type: mongoose.Schema.Types.ObjectId, 
-      ref: 'Service', 
-      required: true 
+
+    // Service being reviewed
+    service: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Service',
+      required: true,
+      index: true
     },
-    // The type of service (activity, stay, dining, transportation, spa)
+
+    // Service type for categorization
     serviceType: {
       type: String,
-      enum: ['activity', 'stay', 'dining', 'transportation', 'spa'],
+      enum: ['Activity', 'Stay', 'Transportation', 'Dining'],
+      required: true
+    },
+
+    // Vendor who provided the service
+    vendor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
       required: true,
+      index: true
     },
-    // Optional: if reviewing a specific option (e.g. an option in transportation or activity)
-    option: { 
-      type: mongoose.Schema.Types.ObjectId, 
-      default: null 
+
+    // MANDATORY: Rating from 1-5
+    rating: {
+      type: Number,
+      required: true,
+      min: 1,
+      max: 5
     },
-    // Optional: if reviewing a specific room for stays
-    room: { 
-      type: mongoose.Schema.Types.ObjectId, 
-      default: null 
-    },
-    stars: { 
-      type: Number, 
-      required: true, 
-      min: 1, 
-      max: 5 
-    },
-    title: { 
+
+    // OPTIONAL: Review subject/title
+    subject: {
       type: String,
       trim: true,
       maxlength: 100
     },
-    description: { 
+
+    // OPTIONAL: Detailed description
+    // Required if subject is provided
+    description: {
       type: String,
       trim: true,
       maxlength: 1000
     },
-    // Additional review criteria
-    aspectRatings: {
-      cleanliness: { type: Number, min: 1, max: 5 },
-      service: { type: Number, min: 1, max: 5 },
-      value: { type: Number, min: 1, max: 5 },
-      location: { type: Number, min: 1, max: 5 },
-      amenities: { type: Number, min: 1, max: 5 }
-    },
-    // Images uploaded with the review
+
+    // OPTIONAL: Review images
     images: [{
-      url: { type: String, required: true },
-      caption: { type: String, maxlength: 200 }
-    }],
-    // Tracking for helpful votes
-    helpfulVotes: { type: Number, default: 0 },
-    unhelpfulVotes: { type: Number, default: 0 },
-    
-    // Who found this review helpful (to prevent duplicate votes)
-    helpfulUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    unhelpfulUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    
-    // Host/Admin replies
-    replies: [
-      {
-        user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-        userType: { type: String, enum: ['host', 'admin'], required: true },
-        comment: { type: String, required: true, maxlength: 500 },
-        createdAt: { type: Date, default: Date.now },
+      url: {
+        type: String,
+        required: true
       },
-    ],
-    
-    // Review status (for moderation)
+      caption: {
+        type: String,
+        maxlength: 200
+      }
+    }],
+
+    // Helpful votes tracking
+    helpfulCount: {
+      type: Number,
+      default: 0
+    },
+
+    helpfulUsers: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }],
+
+    // Vendor response
+    vendorResponse: {
+      text: {
+        type: String,
+        maxlength: 500
+      },
+      respondedAt: Date,
+      respondedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    },
+
+    // Status tracking
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
-      default: 'approved'
+      enum: ['active', 'hidden', 'flagged'],
+      default: 'active'
     },
-    
-    // Flagging system
+
+    // Flag tracking for moderation
     flagged: {
-      isFlagged: { type: Boolean, default: false },
-      flagCount: { type: Number, default: 0 },
-      flagReasons: [{ type: String }],
-      flaggedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
+      isFlagged: {
+        type: Boolean,
+        default: false
+      },
+      reason: String,
+      flaggedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      flaggedAt: Date
     }
   },
-  { 
-    timestamps: true,
-    // Add virtual for calculated average rating across aspects
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true }
+  {
+    timestamps: true
   }
 );
 
-// Virtual for calculating overall aspect rating
-ReviewSchema.virtual('aspectAverage').get(function() {
-  const aspects = this.aspectRatings;
-  if (!aspects) return null;
-  
-  const ratings = Object.values(aspects).filter(rating => rating != null);
-  if (ratings.length === 0) return null;
-  
-  const sum = ratings.reduce((total, rating) => total + rating, 0);
-  return Math.round((sum / ratings.length) * 10) / 10; // Round to 1 decimal
-});
+// Compound index to ensure one review per user per service
+ReviewSchema.index({ booking: 1 }, { unique: true });
 
-// Enforce uniqueness: one review per booking per user
-// This ensures a user can only review each booking once
-ReviewSchema.index(
-  { user: 1, booking: 1 },
-  { unique: true }
-);
+// Index for efficient queries
+ReviewSchema.index({ service: 1, status: 1, createdAt: -1 });
+ReviewSchema.index({ vendor: 1, status: 1, createdAt: -1 });
+ReviewSchema.index({ rating: 1 });
 
-// Additional indexes for performance
-ReviewSchema.index({ service: 1, serviceType: 1 });
-ReviewSchema.index({ user: 1 });
-ReviewSchema.index({ createdAt: -1 });
-ReviewSchema.index({ stars: 1 });
-ReviewSchema.index({ status: 1 });
-
-// Pre-save middleware to validate review eligibility
-ReviewSchema.pre('save', async function(next) {
-  // Only run validations on new reviews
-  if (!this.isNew) return next();
-  
-  try {
-    // Get the booking to validate eligibility
-    const Booking = mongoose.model('Booking');
-    const booking = await Booking.findById(this.booking);
-    
-    if (!booking) {
-      return next(new Error('Booking not found'));
-    }
-    
-    // Verify the user owns this booking
-    if (booking.user.toString() !== this.user.toString()) {
-      return next(new Error('You can only review bookings you have made'));
-    }
-    
-    // Verify booking is confirmed and completed
-    if (booking.status !== 'confirmed') {
-      return next(new Error('You can only review confirmed bookings'));
-    }
-    
-    // Calculate completion date based on service type
-    let completionDate;
-    switch (booking.category) {
-      case 'stay':
-        completionDate = booking.endDate;
-        break;
-      case 'activity':
-      case 'transportation':
-      case 'dining':
-      case 'spa':
-        completionDate = booking.date;
-        break;
-      default:
-        return next(new Error('Invalid booking category'));
-    }
-    
-    if (!completionDate) {
-      return next(new Error('Booking completion date not found'));
-    }
-    
-    // Check if review is within 14 days of completion
-    const now = new Date();
-    const fourteenDaysAfterCompletion = new Date(completionDate);
-    fourteenDaysAfterCompletion.setDate(fourteenDaysAfterCompletion.getDate() + 14);
-    
-    if (now > fourteenDaysAfterCompletion) {
-      return next(new Error('Review period has expired. You have 14 days after completion to leave a review'));
-    }
-    
-    // Check if completion date has passed
-    if (now < completionDate) {
-      return next(new Error('You can only review after the experience has been completed'));
-    }
-    
-    // Verify service matches booking
-    let bookingServiceId;
-    switch (booking.category) {
-      case 'activity':
-        bookingServiceId = booking.activity;
-        break;
-      case 'stay':
-        bookingServiceId = booking.stay;
-        break;
-      case 'transportation':
-        bookingServiceId = booking.transportation;
-        break;
-      case 'dining':
-        bookingServiceId = booking.dining;
-        break;
-      case 'spa':
-        bookingServiceId = booking.spa;
-        break;
-    }
-    
-    if (bookingServiceId.toString() !== this.service.toString()) {
-      return next(new Error('Service ID does not match the booking'));
-    }
-    
-    // Verify service type matches
-    if (booking.category !== this.serviceType) {
-      return next(new Error('Service type does not match the booking category'));
-    }
-    
-    // Verify option if provided
-    if (this.option && booking.option && this.option.toString() !== booking.option.toString()) {
-      return next(new Error('Option does not match the booking'));
-    }
-    
+// Validation: If subject exists, description must also exist
+ReviewSchema.pre('validate', function(next) {
+  if (this.subject && !this.description) {
+    next(new Error('Description is required when subject is provided'));
+  } else {
     next();
-  } catch (error) {
-    next(error);
   }
 });
 
-// Method to check if user can review a specific booking
-ReviewSchema.statics.canUserReview = async function(userId, bookingId) {
+// Virtual for checking if review has content beyond rating
+ReviewSchema.virtual('hasDetailedReview').get(function() {
+  return !!(this.subject || this.description || (this.images && this.images.length > 0));
+});
+
+// ============================================================
+// AUTOMATIC SERVICE ANALYTICS UPDATE HOOKS
+// ============================================================
+
+// Helper function to recalculate and update Service analytics
+ReviewSchema.statics.updateServiceAnalytics = async function(serviceId) {
   try {
-    const Booking = mongoose.model('Booking');
-    const booking = await Booking.findById(bookingId);
+    const Service = mongoose.model('Service');
     
-    if (!booking) {
-      return { canReview: false, reason: 'Booking not found' };
-    }
-    
-    // Check if user owns the booking
-    if (booking.user.toString() !== userId.toString()) {
-      return { canReview: false, reason: 'You can only review your own bookings' };
-    }
-    
-    // Check if booking is confirmed
-    if (booking.status !== 'confirmed') {
-      return { canReview: false, reason: 'Booking must be confirmed to leave a review' };
-    }
-    
-    // Check if already reviewed
-    const existingReview = await this.findOne({ user: userId, booking: bookingId });
-    if (existingReview) {
-      return { canReview: false, reason: 'You have already reviewed this booking' };
-    }
-    
-    // Calculate completion date
-    let completionDate;
-    switch (booking.category) {
-      case 'stay':
-        completionDate = booking.endDate;
-        break;
-      case 'activity':
-      case 'transportation':
-      case 'dining':
-      case 'spa':
-        completionDate = booking.date;
-        break;
-      default:
-        return { canReview: false, reason: 'Invalid booking category' };
-    }
-    
-    if (!completionDate) {
-      return { canReview: false, reason: 'Booking completion date not found' };
-    }
-    
-    const now = new Date();
-    const fourteenDaysAfterCompletion = new Date(completionDate);
-    fourteenDaysAfterCompletion.setDate(fourteenDaysAfterCompletion.getDate() + 14);
-    
-    // Check if experience has been completed
-    if (now < completionDate) {
-      return { 
-        canReview: false, 
-        reason: 'Experience must be completed before you can leave a review',
-        completionDate: completionDate
-      };
-    }
-    
-    // Check if within review period
-    if (now > fourteenDaysAfterCompletion) {
-      return { 
-        canReview: false, 
-        reason: 'Review period has expired. You have 14 days after completion to leave a review',
-        completionDate: completionDate,
-        expiryDate: fourteenDaysAfterCompletion
-      };
-    }
-    
-    return { 
-      canReview: true, 
-      booking: booking,
-      completionDate: completionDate,
-      expiryDate: fourteenDaysAfterCompletion
+    // Aggregate active reviews for this service
+    const analyticsResult = await this.aggregate([
+      {
+        $match: {
+          service: new mongoose.Types.ObjectId(serviceId),
+          status: 'active' // Only count active reviews
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          averageRating: { $avg: '$rating' },
+          totalReviews: { $sum: 1 },
+          ratingDistribution: { $push: '$rating' }
+        }
+      }
+    ]);
+
+    let updateData = {
+      averageRating: 0,
+      totalReviews: 0
     };
+
+    if (analyticsResult.length > 0) {
+      const result = analyticsResult[0];
+      updateData.averageRating = Math.round(result.averageRating * 10) / 10;
+      updateData.totalReviews = result.totalReviews;
+    }
+
+    // Update the Service document
+    const updated = await Service.findByIdAndUpdate(
+      serviceId,
+      updateData,
+      { new: true, runValidators: false }
+    );
+
+    console.log(`[Analytics Update] Service ${serviceId}: ${updateData.totalReviews} reviews, ${updateData.averageRating} avg rating`);
     
+    return updated;
   } catch (error) {
-    return { canReview: false, reason: error.message };
+    console.error(`[Analytics Error] Failed to update service ${serviceId}:`, error);
+    // Don't throw - continue even if analytics update fails
   }
 };
 
-// Method to get user's reviewable bookings
-ReviewSchema.statics.getUserReviewableBookings = async function(userId) {
+// Post-save hook: Update Service analytics when a new review is created or status changes
+ReviewSchema.post('save', async function(doc) {
   try {
-    const Booking = mongoose.model('Booking');
-    
-    // Find confirmed bookings for the user
-    const bookings = await Booking.find({
-      user: userId,
-      status: 'confirmed'
-    }).populate('activity stay transportation dining spa', 'name images');
-    
-    const reviewableBookings = [];
-    
-    for (const booking of bookings) {
-      // Check if already reviewed
-      const existingReview = await this.findOne({ 
-        user: userId, 
-        booking: booking._id 
-      });
-      
-      if (!existingReview) {
-        // Calculate completion date
-        let completionDate;
-        switch (booking.category) {
-          case 'stay':
-            completionDate = booking.endDate;
-            break;
-          case 'activity':
-          case 'transportation':
-          case 'dining':
-          case 'spa':
-            completionDate = booking.date;
-            break;
-        }
-        
-        if (completionDate) {
-          const now = new Date();
-          const fourteenDaysAfterCompletion = new Date(completionDate);
-          fourteenDaysAfterCompletion.setDate(fourteenDaysAfterCompletion.getDate() + 14);
-          
-          // Check if completed and within review window
-          if (now >= completionDate && now <= fourteenDaysAfterCompletion) {
-            reviewableBookings.push({
-              booking: booking,
-              completionDate: completionDate,
-              expiryDate: fourteenDaysAfterCompletion,
-              daysLeft: Math.ceil((fourteenDaysAfterCompletion - now) / (1000 * 60 * 60 * 24))
-            });
-          }
+    // Update Service analytics after review is saved
+    await this.constructor.updateServiceAnalytics(doc.service);
+  } catch (error) {
+    console.error('[Post-Save Hook] Error updating service analytics:', error);
+  }
+});
+
+// Post-findByIdAndUpdate hook: Update Service analytics when review is updated
+ReviewSchema.post('findByIdAndUpdate', async function(doc) {
+  try {
+    if (doc && doc.service) {
+      await this.constructor.updateServiceAnalytics(doc.service);
+    }
+  } catch (error) {
+    console.error('[Post-FindByIdAndUpdate Hook] Error updating service analytics:', error);
+  }
+});
+
+// Post-deleteOne hook: Update Service analytics when review is deleted
+ReviewSchema.post('deleteOne', async function(doc) {
+  try {
+    if (doc && doc.service) {
+      await mongoose.model('Review').updateServiceAnalytics(doc.service);
+    }
+  } catch (error) {
+    console.error('[Post-DeleteOne Hook] Error updating service analytics:', error);
+  }
+});
+
+// Post-findByIdAndDelete hook: Update Service analytics
+ReviewSchema.post('findByIdAndDelete', async function(doc) {
+  try {
+    if (doc && doc.service) {
+      await mongoose.model('Review').updateServiceAnalytics(doc.service);
+    }
+  } catch (error) {
+    console.error('[Post-FindByIdAndDelete Hook] Error updating service analytics:', error);
+  }
+});
+
+// Post-updateOne hook: Handle bulk update operations
+ReviewSchema.post('updateOne', async function() {
+  try {
+    // Get the filter to find affected services
+    const filter = this.getFilter();
+    if (filter.service) {
+      const serviceId = filter.service;
+      await mongoose.model('Review').updateServiceAnalytics(serviceId);
+    }
+  } catch (error) {
+    console.error('[Post-UpdateOne Hook] Error updating service analytics:', error);
+  }
+});
+
+// Method to mark as helpful by a user
+ReviewSchema.methods.markHelpful = async function(userId) {
+  if (!this.helpfulUsers.includes(userId)) {
+    this.helpfulUsers.push(userId);
+    this.helpfulCount = this.helpfulUsers.length;
+    await this.save();
+    return true;
+  }
+  return false;
+};
+
+// Method to unmark as helpful by a user
+ReviewSchema.methods.unmarkHelpful = async function(userId) {
+  const index = this.helpfulUsers.indexOf(userId);
+  if (index > -1) {
+    this.helpfulUsers.splice(index, 1);
+    this.helpfulCount = this.helpfulUsers.length;
+    await this.save();
+    return true;
+  }
+  return false;
+};
+
+// Static method to get average rating for a service
+ReviewSchema.statics.getAverageRating = async function(serviceId) {
+  const result = await this.aggregate([
+    {
+      $match: {
+        service: new mongoose.Types.ObjectId(serviceId),
+        status: 'active'
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        averageRating: { $avg: '$rating' },
+        totalReviews: { $sum: 1 },
+        ratingDistribution: {
+          $push: '$rating'
         }
       }
     }
-    
-    return reviewableBookings;
+  ]);
+
+  if (result.length === 0) {
+    return {
+      averageRating: 0,
+      totalReviews: 0,
+      ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
+    };
+  }
+
+  // Calculate rating distribution
+  const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  result[0].ratingDistribution.forEach(rating => {
+    distribution[rating] = (distribution[rating] || 0) + 1;
+  });
+
+  return {
+    averageRating: Math.round(result[0].averageRating * 10) / 10,
+    totalReviews: result[0].totalReviews,
+    ratingDistribution: distribution
+  };
+};
+
+// Static method to get vendor's average rating
+ReviewSchema.statics.getVendorAverageRating = async function(vendorId) {
+  const result = await this.aggregate([
+    {
+      $match: {
+        vendor: new mongoose.Types.ObjectId(vendorId),
+        status: 'active'
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        averageRating: { $avg: '$rating' },
+        totalReviews: { $sum: 1 }
+      }
+    }
+  ]);
+
+  if (result.length === 0) {
+    return { averageRating: 0, totalReviews: 0 };
+  }
+
+  return {
+    averageRating: Math.round(result[0].averageRating * 10) / 10,
+    totalReviews: result[0].totalReviews
+  };
+};
+
+// Bulk update helper: Update multiple services after bulk review operations
+ReviewSchema.statics.updateMultipleServiceAnalytics = async function(serviceIds) {
+  try {
+    const updates = serviceIds.map(serviceId => 
+      this.updateServiceAnalytics(serviceId)
+    );
+    await Promise.all(updates);
   } catch (error) {
-    throw error;
+    console.error('[Bulk Update Error] Failed to update multiple service analytics:', error);
   }
 };
 
