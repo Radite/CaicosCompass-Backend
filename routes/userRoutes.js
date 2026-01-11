@@ -141,5 +141,40 @@ router.put('/change-password', authMiddleware.protect, userController.changePass
 // Add these lines to routes/userRoutes.js (after line where change-password route is)
 router.post('/verify-password', authMiddleware.protect, userController.verifyPassword);
 router.post('/decrypted-payment-info', authMiddleware.protect, authMiddleware.businessManagerProtect, userController.getDecryptedPaymentInfo);
+
+router.get('/verify-code/:code', async (req, res) => {
+    try {
+        const { code } = req.params;
+        const user = await User.findOne({ 
+            referralCode: code.toUpperCase().trim()
+        });
+        
+        if (!user) {
+            return res.status(200).json({
+                success: false,
+                valid: false,
+                message: 'Referral code not found or not active'
+            });
+        }
+        
+        return res.status(200).json({
+            success: true,
+            valid: true,
+            data: {
+                userId: user._id,
+                userName: user.name,
+                referralCode: user.referralCode,
+                discountPercentage: 2.5,
+                commissionPercentage: 5
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            valid: false,
+            message: 'Error verifying referral code'
+        });
+    }
+});
 module.exports = router;
 

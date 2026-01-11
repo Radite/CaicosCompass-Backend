@@ -197,6 +197,17 @@ const BookingSchema = new mongoose.Schema({
     }]
   },
 
+  referralCode: {
+  type: String,
+  default: null,
+  index: true
+},
+
+referralPartner: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: 'ReferralPartner',
+  default: null
+},
   // Pricing and payment
   pricing: {
     basePrice: { type: Number, required: true },

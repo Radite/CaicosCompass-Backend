@@ -96,6 +96,8 @@ app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/info', require('./routes/infoRoutes'));
 app.use('/api/forgot', require('./routes/forgotRoutes'));
 app.use('/api/tickets', require('./routes/ticketRoutes'));
+app.use('/api/payment-methods', require('./routes/paymentMethodRoutes'));
+app.use('/api/referral', require('./routes/referralRoutes')); // ← ADD THIS LINE
 
 
 // FAQ Routes

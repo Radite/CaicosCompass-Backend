@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { createBookingFromPayment } = require('../controllers/bookingController');
+const referralService = require('../services/referralService');
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -31,6 +32,7 @@ const essentialData = {
     numOfPeople: bookingData.numPeople || 1,
     totalPrice: bookingData.totalPrice,
     basePrice: bookingData.basePrice || bookingData.price || bookingData.totalPrice, // ADD THIS
+    referralCode: bookingData.referralCode || '' // ADD THIS LINE
 };
 
 // Add category-specific essential fields only
@@ -195,6 +197,7 @@ router.post('/create-cart-payment-intent', express.json(), async (req, res) => {
       guestName: guestName || '',
       guestEmail: guestEmail || contactInfo.email,
       contactEmail: contactInfo.email,
+      referralCode: referralCode || null,
       contactFirstName: contactInfo.firstName || '',
       contactLastName: contactInfo.lastName || '',
       cartId: cart ? cart._id.toString() : 'guest_cart',
@@ -666,6 +669,22 @@ case 'Stay':
       console.log('   - Payment Transaction:', booking.payment.transactionId);
       
       createdBookingIds.push(booking._id);
+      // Create referral commission if referral code exists
+if (paymentIntent.metadata.referralCode && paymentIntent.metadata.referralCode.trim()) {
+  try {
+    console.log(`💰 Processing referral commission for code: ${paymentIntent.metadata.referralCode}`);
+    const commission = await referralService.createCommissionFromBooking(
+      booking,
+      paymentIntent.metadata.referralCode
+    );
+    if (commission) {
+      console.log(`✅ Commission created: ${commission._id}`);
+    }
+  } catch (commError) {
+    console.error('⚠️  Error creating referral commission:', commError.message);
+    // Don't fail booking if commission creation fails
+  }
+}
       successfulItemIds.push(item._id);
       
     // ✅ ADD CAICOS CREDITS: 1 point per dollar spent
@@ -763,17 +782,18 @@ if (userId) {
   console.log('🎉 WEBHOOK: CART CHECKOUT - END');
   console.log('==========================================\n');
 
-  return res.status(200).json({ 
-    received: true, 
-    booking_status: createdBookingIds.length > 0 ? 'created' : 'failed',
-    booking_type: 'cart',
-    total_items: cartItems.length,
-    bookings_created: createdBookingIds.length,
-    bookings_failed: failedItems.length,
-    booking_ids: createdBookingIds,
-    cart_status: failedItems.length === 0 ? 'cleared' : 'partially_cleared',
-    failed_items: failedItems.length > 0 ? failedItems.map(f => f.error) : undefined
-  });
+return res.status(200).json({ 
+  received: true, 
+  booking_status: createdBookingIds.length > 0 ? 'created' : 'failed',
+  booking_type: 'cart',
+  total_items: cartItems.length,
+  bookings_created: createdBookingIds.length,
+  bookings_failed: failedItems.length,
+  booking_ids: createdBookingIds,
+  cart_status: failedItems.length === 0 ? 'cleared' : 'partially_cleared',
+  referral_code_used: paymentIntent.metadata.referralCode || null, // ADD THIS LINE
+  failed_items: failedItems.length > 0 ? failedItems.map(f => f.error) : undefined
+});
 }
     // ===== SINGLE ITEM CHECKOUT (unchanged) =====
     // ... your existing single booking logic ...
@@ -822,20 +842,45 @@ if (userId) {
             let bookingResult = null;
             let bookingError = null;
 
-            const mockRes = {
-                status: (code) => ({
-                    json: (data) => {
-                        console.log(`Booking creation status ${code}:`, data);
-                        if (code >= 200 && code < 300) {
-                            bookingResult = data;
-                            console.log("Booking created successfully:", data.data?._id);
-                        } else {
-                            bookingError = data;
-                            console.log("Booking creation failed:", data.message || data.error);
-                        }
-                    }
-                })
-            };
+const mockRes = {
+  status: (code) => ({
+    json: async (data) => {  // ← ADD 'async' HERE - THIS FIXES IT
+      console.log(`Booking creation status ${code}:`, data);
+      if (code >= 200 && code < 300) {
+        bookingResult = data;
+        
+        // Create referral commission if referral code exists
+        if (bookingResult?.data?._id && bookingDetails.referralCode) {
+          try {
+            const trimmedCode = bookingDetails.referralCode.trim();
+            
+            if (trimmedCode) {
+              console.log(`💰 Processing referral commission for code: ${trimmedCode}`);
+              // NOW this works because json() is async
+              const commission = await referralService.createCommissionFromBooking(
+                bookingResult.data,
+                trimmedCode
+              );
+              
+              if (commission) {
+                console.log(`✅ Commission created: $${commission.commissionAmount.toFixed(2)}`);
+              }
+            }
+          } catch (commError) {
+            console.error('⚠️  Error creating referral commission:', commError.message);
+            // Don't fail booking if commission creation fails
+          }
+        }
+        
+        console.log("Booking created successfully:", data.data?._id);
+      } else {
+        bookingError = data;
+        console.log("Booking creation failed:", data.message || data.error);
+      }
+    }
+  })
+};
+
 
             const mockReq = { 
                 body: { 
@@ -861,13 +906,13 @@ if (userId) {
             }
 
             console.log("Webhook processed successfully");
-            return res.status(200).json({ 
-                received: true, 
-                booking_status: 'created',
-                booking_type: 'single',
-                booking_id: bookingResult?.data?._id 
-            });
-
+return res.status(200).json({ 
+  received: true, 
+  booking_status: 'created',
+  booking_type: 'single',
+  booking_id: bookingResult?.data?._id,
+  referral_code_used: bookingDetails.referralCode || null // ADD THIS LINE
+});
         } catch (err) {
             console.error('Error processing payment_intent.succeeded webhook:', err);
             console.error('Stack trace:', err.stack);
